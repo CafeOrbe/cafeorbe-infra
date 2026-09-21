@@ -1,0 +1,142 @@
+# CaféOrbe · infraestructura local
+#
+#   docker compose up -d                  → solo dependencias (RabbitMQ, Postgres, Redis, LiveKit)
+#   docker compose --profile apps up -d   → además los 6 servicios backend (requiere `mvn package` previo en cada uno)
+#
+# Puertos: 5432 Postgres · 5672/15672 RabbitMQ · 6379 Redis · 7880-7882 LiveKit
+#          8080 gateway · 8081 identity · 8082 auction · 8083 wallet · 8084 streaming · 8085 realtime
+
+name: cafeorbe
+
+x-servicio: &servicio
+  restart: unless-stopped
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+  profiles: [apps]
+
+x-entorno-comun: &entorno-comun
+  JWT_SECRET: ${JWT_SECRET:-cafeorbe-dev-jwt-secret-cambiar-en-prod-0123456789}
+  RABBIT_HOST: rabbitmq
+  RABBIT_USER: ${RABBIT_USER:-cafeorbe}
+  RABBIT_PASSWORD: ${RABBIT_PASSWORD:-cafeorbe}
+
+services:
+  # ── Dependencias ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/01-bases-de-datos.sql:/docker-entrypoint-initdb.d/01-bases-de-datos.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:-cafeorbe}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:-cafeorbe}
+    ports: ["5672:5672", "15672:15672"]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+
+  # ── Servicios (perfil "apps") ──────────────────────────────
+  identity-service:
+    <<: *servicio
+    build: ../cafeorbe-identity-service
+    ports: ["8081:8081"]
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/identity_db
+
+  auction-service:
+    <<: *servicio
+    build: ../cafeorbe-auction-service
+    ports: ["8082:8082"]
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/auction_db
+      WALLET_URL: http://wallet-service:8083
+
+  wallet-service:
+    <<: *servicio
+    build: ../cafeorbe-wallet-service
+    ports: ["8083:8083"]
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/wallet_db
+      WALLET_SALDO_INICIAL: ${WALLET_SALDO_INICIAL:-1000}
+
+  streaming-service:
+    <<: *servicio
+    build: ../cafeorbe-streaming-service
+    ports: ["8084:8084"]
+    environment:
+      <<: *entorno-comun
+      DB_URL: jdbc:postgresql://postgres:5432/streaming_db
+      LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-cafeorbe}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789}
+
+  realtime-gateway:
+    build: ../cafeorbe-realtime-gateway
+    restart: unless-stopped
+    profiles: [apps]
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports: ["8085:8085"]
+    environment:
+      <<: *entorno-comun
+      REDIS_HOST: redis
+      AUCTION_URL: http://auction-service:8082
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+
+  api-gateway:
+    build: ../cafeorbe-api-gateway
+    restart: unless-stopped
+    profiles: [apps]
+    depends_on: [identity-service, auction-service, wallet-service, streaming-service]
+    ports: ["8080:8080"]
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-cafeorbe-dev-jwt-secret-cambiar-en-prod-0123456789}
+      IDENTITY_URL: http://identity-service:8081
+      AUCTION_URL: http://auction-service:8082
+      WALLET_URL: http://wallet-service:8083
+      STREAMING_URL: http://streaming-service:8084
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+
+volumes:
+  postgres-data:
+  rabbitmq-data:

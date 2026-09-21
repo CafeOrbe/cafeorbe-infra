@@ -1,0 +1,9 @@
+# Configuración de LiveKit SOLO para desarrollo local. No usar estas claves en producción.
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 127.0.0.1
+keys:
+  cafeorbe: cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789

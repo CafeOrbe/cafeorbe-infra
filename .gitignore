@@ -1,0 +1,20 @@
+# ── Secretos y configuración local ───────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Datos generados por los contenedores ─────
+data/
+volumes/
+*.log
+
+# ── IDEs ─────────────────────────────────────
+.idea/
+.vscode/
+
+# ── Sistema operativo ────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
