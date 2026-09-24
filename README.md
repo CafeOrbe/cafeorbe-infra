@@ -42,6 +42,8 @@ docker compose --profile apps up -d --build
 | `WALLET_URL` | auction | Consulta síncrona de saldo (HU-14). |
 | `AUCTION_URL` | gateway, realtime | Destino de las pujas y de las rutas `/api/subastas`. |
 | `LIVEKIT_URL` `LIVEKIT_API_KEY` `LIVEKIT_API_SECRET` | streaming | Proveedor de video. |
+| `LIVEKIT_API_URL` | streaming | API de servidor de LiveKit vista desde el servicio (cerrar salas, expulsar). |
+| `AUCTION_URL` | streaming | Para verificar el dueño y el estado de la subasta antes de transmitir. |
 | `WALLET_SALDO_INICIAL` | wallet | Orbes de la carga automática (HU-07). |
 
 ## Limpieza del MVP

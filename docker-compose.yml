@@ -70,6 +70,9 @@ services:
       - "7882:7882/udp"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    # Para que los webhooks lleguen al streaming-service cuando corre fuera de Docker (también en Linux)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ── Servicios (perfil "apps") ──────────────────────────────
   identity-service:
@@ -106,6 +109,8 @@ services:
       <<: *entorno-comun
       DB_URL: jdbc:postgresql://postgres:5432/streaming_db
       LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_URL: http://livekit:7880
+      AUCTION_URL: http://auction-service:8082
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-cafeorbe}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789}
 

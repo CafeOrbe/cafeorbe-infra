@@ -7,3 +7,11 @@ rtc:
   node_ip: 127.0.0.1
 keys:
   cafeorbe: cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789
+# HU-11 (hallazgos 12 y 16): LiveKit avisa al streaming-service cuando el Subastador sale de la sala o alguien
+# publica video. La primera URL es para el perfil "apps" de docker compose; la segunda, para cuando el
+# streaming-service corre fuera de Docker (mvn spring-boot:run). La que no esté disponible solo deja un aviso en el log.
+webhook:
+  api_key: cafeorbe
+  urls:
+    - http://streaming-service:8084/internal/livekit/webhook
+    - http://host.docker.internal:8084/internal/livekit/webhook
