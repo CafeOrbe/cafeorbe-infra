@@ -70,6 +70,9 @@ services:
       - "7882:7882/udp"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    # El webhook llama a streaming por el host: sirve con streaming en contenedor o con mvn spring-boot:run.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ── Servicios (perfil "apps") ──────────────────────────────
   identity-service:
@@ -105,7 +108,10 @@ services:
     environment:
       <<: *entorno-comun
       DB_URL: jdbc:postgresql://postgres:5432/streaming_db
+      AUCTION_URL: http://auction-service:8082
+      # URL que usa el navegador (pública) y URL de la API de servidor vista desde este contenedor
       LIVEKIT_URL: ws://localhost:7880
+      LIVEKIT_API_URL: http://livekit:7880
       LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-cafeorbe}
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789}
 

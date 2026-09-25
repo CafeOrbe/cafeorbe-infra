@@ -7,3 +7,9 @@ rtc:
   node_ip: 127.0.0.1
 keys:
   cafeorbe: cafeorbe-livekit-dev-secret-cambiar-en-prod-0123456789
+# Hallazgo 12: avisa a streaming-service cuando el Subastador deja de publicar o se desconecta,
+# para detener la transmisión aunque cierre la pestaña. La firma usa la clave de arriba.
+webhook:
+  api_key: cafeorbe
+  urls:
+    - http://host.docker.internal:8084/internal/livekit/webhook

@@ -41,8 +41,20 @@ docker compose --profile apps up -d --build
 | `RABBIT_HOST` `RABBIT_PORT` `RABBIT_USER` `RABBIT_PASSWORD` | todos menos el gateway | Broker. |
 | `WALLET_URL` | auction | Consulta síncrona de saldo (HU-14). |
 | `AUCTION_URL` | gateway, realtime | Destino de las pujas y de las rutas `/api/subastas`. |
-| `LIVEKIT_URL` `LIVEKIT_API_KEY` `LIVEKIT_API_SECRET` | streaming | Proveedor de video. |
+| `LIVEKIT_URL` `LIVEKIT_API_KEY` `LIVEKIT_API_SECRET` | streaming | Proveedor de video. `LIVEKIT_URL` es la URL que usa el **navegador**. |
+| `LIVEKIT_API_URL` | streaming | API de servidor de LiveKit vista **desde el servicio** (cerrar salas, expulsar). En contenedores: `http://livekit:7880`. |
+| `AUCTION_URL` (streaming) | streaming | Consulta del dueño y el estado de la subasta antes de transmitir. En contenedores: `http://auction-service:8082`. |
 | `WALLET_SALDO_INICIAL` | wallet | Orbes de la carga automática (HU-07). |
+
+## Requisitos
+
+- **Java 21 es obligatorio.** Cada `pom.xml` tiene `maven-enforcer-plugin` con `requireJavaVersion [21,22)`: con otro JDK el build falla con un mensaje claro.
+
+## Webhook de LiveKit
+
+`livekit/livekit.yaml` envía los eventos de sala a `http://host.docker.internal:8084/internal/livekit/webhook` (firmados con la clave `cafeorbe`).
+Así streaming-service detiene la transmisión si el Subastador cierra la pestaña o pierde la conexión (hallazgo 12).
+Funciona igual con streaming en contenedor (perfil `apps`) o con `mvn spring-boot:run`, porque el puerto 8084 está publicado en el host.
 
 ## Limpieza del MVP
 
