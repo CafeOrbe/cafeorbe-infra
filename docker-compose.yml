@@ -99,7 +99,7 @@ services:
     environment:
       <<: *entorno-comun
       DB_URL: jdbc:postgresql://postgres:5432/wallet_db
-      WALLET_SALDO_INICIAL: ${WALLET_SALDO_INICIAL:-1000}
+      WALLET_SALDO_INICIAL: ${WALLET_SALDO_INICIAL:-100000000}
 
   streaming-service:
     <<: *servicio
