@@ -285,9 +285,21 @@ flowchart TB
 | Ver los eventos y las colas | Consola de RabbitMQ en `http://localhost:15672` |
 | Ver los registros de un servicio | `docker compose logs -f auction-service` |
 | Reiniciar con datos limpios | `docker compose --profile apps down -v` y volver a levantar |
-| Apagar y encender la nube para ahorrar crédito | `scripts/azure-apagar.sh` y `scripts/azure-encender.sh`; ver `docs/APAGADO-AZURE.md` |
+| Apagar y encender la nube para ahorrar crédito | Ver `docs/APAGADO-AZURE.md` y la nota de abajo |
 
-**Antes de una demo en la nube:** encender la infraestructura con tiempo. Con la nube apagada, las direcciones públicas de los servicios responden `502` y el frontend publicado no puede iniciar sesión.
+**Antes de una demo en la nube:** encender la infraestructura con tiempo. Con la nube apagada, las direcciones públicas responden `502` y el frontend publicado no puede iniciar sesión.
+
+**Encender y apagar las aplicaciones.** Primero PostgreSQL y después las aplicaciones. Redis y el registro de imágenes no se pueden apagar. Las aplicaciones detenidas con Stop no se recuperan cambiando las réplicas mínimas; hay que arrancarlas. Lo mismo sirve para reiniciar una aplicación después de cambiarle la configuración: detenerla y arrancarla. Desde Cloud Shell (la CLI reemplaza sola `{subscriptionId}`):
+
+```bash
+az postgres flexible-server start -n cafeorbe-pg -g cafeorbe-org
+
+for app in identity-service wallet-service auction-service streaming-service realtime-gateway api-gateway; do
+  az rest --method post --url "https://management.azure.com/subscriptions/{subscriptionId}/resourceGroups/cafeorbe-org/providers/Microsoft.App/containerApps/$app/start?api-version=2024-03-01"
+done
+```
+
+Para apagar: la misma llamada con `stop` en lugar de `start`, y al final `az postgres flexible-server stop -n cafeorbe-pg -g cafeorbe-org`.
 
 ## 9. Decisiones de arquitectura
 
@@ -303,19 +315,25 @@ flowchart TB
 
 ## 10. Riesgos de despliegue
 
-Revisión de los pipelines y de lo que responde la nube desde fuera, hecha el 2026-10-01. **Verificado** significa que se comprobó en el código, en los pipelines o con una petición real; **por verificar** significa que la evidencia apunta ahí pero falta confirmarlo con acceso a Azure.
+Revisión hecha el 2026-10-01 sobre los pipelines, el código y el estado real de Azure: configuración consultada con la CLI, cambios aplicados a mano en QA y la verificación de extremo a extremo `CafeOrbe_Contexto/verificacion/e2e-sprint1.mjs` ejecutada contra QA.
 
-| # | Riesgo | Estado | Evidencia | Acción propuesta |
+**Un dato que condiciona todo lo demás:** el ambiente de QA es de tipo **express**. En ese tipo de ambiente no existen nombres `.internal.`, el ingress interno no aísla a la aplicación y un cambio de configuración no reinicia la réplica.
+
+| # | Riesgo | Estado | Evidencia | Acción |
 |:-:|---|---|---|---|
-| 1 | QA y PROD usan la misma base de datos, el mismo broker y el mismo Redis | **Verificado en los pipelines.** Aún no ocurre: PROD nunca se ha desplegado | Los valores de conexión son idénticos en `deploy-qa` y `deploy-prod` de los seis pipelines. Ningún repositorio tiene etiquetas `v*` y las aplicaciones de PROD no existen | Bases, vhost y Redis propios para PROD antes de crear la primera etiqueta |
-| 2 | Los servicios internos se publican en internet, aunque confían en las cabeceras `X-User-*` | **Verificado en los pipelines.** Por verificar en Azure | Los seis pipelines crean la aplicación con `--ingress external`. Las direcciones públicas de los seis responden distinto que una aplicación inexistente | Ingress interno para identity, auction y wallet. Solo api-gateway y realtime-gateway deben ser públicos |
-| 3 | Streaming necesita recibir webhooks de LiveKit Cloud | **Verificado en el código** | La ruta `/internal/livekit/webhook` no pasa por el api-gateway. Si streaming se vuelve interno, LiveKit Cloud ya no lo alcanza | Exponer solo esa ruta, por el gateway o con una regla de entrada dedicada |
-| 4 | `LIVEKIT_API_URL` no está definida en la nube | **Verificado en el pipeline y en el código** | El pipeline de streaming no la define y el valor por defecto es `localhost`. Cerrar salas y expulsar participantes fallaría y solo dejaría un aviso en el registro | Definir la variable con la URL de la API de LiveKit Cloud |
-| 5 | Llamadas entre servicios por `http` a nombres internos | **Por verificar** | El ambiente redirige `http` a `https` (comprobado desde fuera). El api-gateway ya se cambió a `https` por esto; auction → wallet, realtime → auction y streaming → auction siguen en `http`. Sus clientes no siguen esa redirección: las pujas se rechazarían por saldo no disponible, las enviadas por WebSocket se perderían sin aviso y no se podría transmitir | Probar una puja de extremo a extremo en QA. Si falla, usar el nombre corto de la aplicación o permitir `http` en el ingress interno |
-| 6 | El api-gateway no valida el certificado de los servicios | **Verificado en el código** | `use-insecure-trust-manager: true` | Resolver junto con el riesgo 5 |
-| 7 | Redis sin TLS | **Verificado en el pipeline** | El realtime-gateway se conecta al puerto `6379`; la contraseña viaja sin cifrar | Puerto TLS `6380` |
-| 8 | Un solo usuario de base de datos para los cuatro servicios | **Verificado en los pipelines** | En la nube todos usan el mismo usuario; el aislamiento por base del entorno local se pierde | Un usuario por servicio, como en local |
-| 9 | Secretos como variables de entorno en texto plano | **Verificado en los pipelines** | Se pasan con `--set-env-vars`, visibles para quien pueda leer la configuración de la aplicación | Secretos de Container Apps con referencia desde la variable |
-| 10 | El frontend publicado no resolvía rutas internas | **Verificado y corregido en `cafeorbe-web`** | Abrir o recargar `/login` o `/comprador` respondía `404` | `vercel.json` con la reescritura hacia `index.html`; falta publicarlo |
-| 11 | Imagen de LiveKit sin versión fija en local | **Verificado** | `livekit/livekit-server:latest` | Fijar una versión |
-| 12 | Los servicios compilan contra el último commit de `cafeorbe-contracts` | **Verificado en los pipelines** | Cada pipeline clona y compila `main` de contracts | Versiones publicadas y fijas |
+| 1 | En QA no se podía iniciar sesión ni usar nada a través del api-gateway | **Corregido y verificado en Azure** | El gateway y tres servicios buscaban a los demás por nombres `.internal.`, que no existen: Azure respondía `404`. Con el nombre real de cada aplicación por `https`, la verificación de extremo a extremo pasa 70 de 70 en QA | Los pipelines usan ya los nombres reales |
+| 2 | Un cambio de configuración no reinicia la aplicación | **Verificado en Azure** | Tras `az containerapp update --set-env-vars`, la réplica siguió corriendo con los valores anteriores hasta detener y arrancar la aplicación | Comprobar si un despliegue con imagen nueva sí reemplaza la réplica; si no, añadir el reinicio a los pipelines |
+| 3 | Los servicios internos están publicados en internet, aunque confían en las cabeceras `X-User-*` | **Verificado en Azure. Abierto** | Los seis responden en su dirección pública. Al pedir ingress interno, Azure guarda el valor pero la aplicación sigue siendo pública; permitir `http` interno se rechaza por no estar soportado en express | Secreto compartido entre el api-gateway y los servicios, o pasar a un ambiente con red propia |
+| 4 | Las pruebas de humo no detectaban un sistema roto | **Corregido; falta su primera ejecución en Azure** | Solo consultaban `/actuator/health`: pasaban aunque no se pudiera iniciar sesión | En identity, auction, wallet y streaming la prueba de humo hace una petición real a través del api-gateway. Probada contra el entorno local |
+| 5 | `LIVEKIT_API_URL` no estaba definida en la nube | **Verificado en Azure. Corregido en el código** | La variable no existía y el valor por defecto era `localhost`: cerrar salas y expulsar participantes fallaba en silencio | Si no se indica, se deduce de `LIVEKIT_URL` (`wss` → `https`) |
+| 6 | El webhook de LiveKit solo se podía recibir llamando directo a streaming | **Corregido en el código.** Falta configurarlo en LiveKit | El api-gateway deja pasar sin token `POST /api/streaming/webhooks/livekit`; streaming lo autentica por la firma de LiveKit | Registrar en el proyecto de LiveKit Cloud la URL `https://<api-gateway>/api/streaming/webhooks/livekit` y probar cerrando la pestaña del Subastador |
+| 7 | Los scripts de apagado y encendido no reflejan cómo se apaga realmente | **Verificado en Azure** | Las aplicaciones se detienen con Stop, y `azure-encender.sh` solo cambia las réplicas mínimas: no las vuelve a arrancar. `az containerapp start` no existe en la CLI de Cloud Shell | Arrancar y detener con la API de administración (sección 8) y actualizar los scripts |
+| 8 | QA y PROD usan la misma base de datos, el mismo broker y el mismo Redis | **Verificado en Azure.** Aún no ocurre: PROD nunca se ha desplegado | Existen los dos ambientes, pero un solo PostgreSQL y un solo Redis. Ningún repositorio tiene etiquetas `v*` | Bases, vhost y Redis propios para PROD antes de crear la primera etiqueta |
+| 9 | Las URLs de PROD apuntaban a aplicaciones que no existirían | **Corregido en los pipelines; sin probar** | Usaban `.internal.` y el nombre sin el sufijo `-prod` con el que el pipeline crea las aplicaciones | Verificar en el primer despliegue a PROD |
+| 10 | El api-gateway no valida el certificado de los servicios | **Verificado en el código** | `use-insecure-trust-manager: true`. Ya no debería hacer falta: los nombres reales tienen certificado válido, y auction ya llama a wallet por `https` validándolo | Quitar la opción y probar en QA |
+| 11 | Redis sin TLS | **Verificado en Azure** | El puerto sin TLS está habilitado y el realtime-gateway se conecta por `6379`: la contraseña viaja sin cifrar | Puerto TLS `6380` |
+| 12 | Un solo usuario de base de datos para los cuatro servicios | **Verificado en Azure** | Los cuatro usan el mismo usuario; el aislamiento por base del entorno local se pierde | Un usuario por servicio, como en local |
+| 13 | Secretos como variables de entorno en texto plano | **Verificado en Azure** | Ninguna contraseña usa una referencia a secreto | Secretos de Container Apps con referencia desde la variable |
+| 14 | El frontend publicado no resolvía rutas internas | **Corregido y verificado** | Abrir o recargar `/login` o `/comprador` respondía `404` | `vercel.json` con la reescritura hacia `index.html`, ya publicado |
+| 15 | Imagen de LiveKit sin versión fija en local | **Verificado** | `livekit/livekit-server:latest` | Fijar una versión |
+| 16 | Los servicios compilan contra el último commit de `cafeorbe-contracts` | **Verificado en los pipelines** | Cada pipeline clona y compila `main` de contracts | Versiones publicadas y fijas |
