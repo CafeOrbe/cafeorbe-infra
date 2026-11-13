@@ -78,10 +78,16 @@ services:
   identity-service:
     <<: *servicio
     build: ../cafeorbe-identity-service
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: ["8081:8081"]
     environment:
       <<: *entorno-comun
       DB_URL: jdbc:postgresql://postgres:5432/identity_db
+      # Sprint 2: tickets del WebSocket y sesiones cerradas, compartidos con los gateways.
+      REDIS_HOST: redis
 
   auction-service:
     <<: *servicio
@@ -133,10 +139,17 @@ services:
     build: ../cafeorbe-api-gateway
     restart: unless-stopped
     profiles: [apps]
-    depends_on: [identity-service, auction-service, wallet-service, streaming-service]
+    depends_on:
+      identity-service: { condition: service_started }
+      auction-service: { condition: service_started }
+      wallet-service: { condition: service_started }
+      streaming-service: { condition: service_started }
+      redis: { condition: service_healthy }
     ports: ["8080:8080"]
     environment:
       JWT_SECRET: ${JWT_SECRET:-cafeorbe-dev-jwt-secret-cambiar-en-prod-0123456789}
+      # Sprint 2: límite por usuario (SEG-03) y sesiones cerradas, compartidos entre réplicas.
+      REDIS_HOST: redis
       IDENTITY_URL: http://identity-service:8081
       AUCTION_URL: http://auction-service:8082
       WALLET_URL: http://wallet-service:8083

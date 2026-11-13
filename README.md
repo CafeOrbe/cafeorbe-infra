@@ -165,7 +165,7 @@ docker compose --profile apps down -v   # borra también los volúmenes
 |---|---|---|---|
 | PostgreSQL 16 | `5432` | Persistencia, una base por servicio | identity, auction, wallet, streaming |
 | RabbitMQ 3.13 | `5672` · consola `15672` | Eventos entre servicios. Exchange topic `cafeorbe.eventos` | Todos menos el api-gateway |
-| Redis 7 | `6379` | Presencia y difusión entre instancias del realtime-gateway | realtime-gateway |
+| Redis 7 | `6379` | Presencia y difusión entre instancias del realtime-gateway; límites anti-abuso, tickets del WebSocket y sesiones cerradas | realtime-gateway, identity, api-gateway |
 | LiveKit | `7880` · `7881` · `7882/udp` | Servidor de medios WebRTC para el video en vivo | streaming-service y el navegador |
 
 **LiveKit en local.** `livekit/livekit.yaml` define la clave de desarrollo y el webhook hacia el streaming-service. El webhook apunta a `host.docker.internal:8084`, así funciona igual si streaming corre en un contenedor o directamente en la máquina, porque el puerto 8084 está publicado en ambos casos.
@@ -200,7 +200,7 @@ Todos los valores tienen un valor por defecto para desarrollo. `.env.example` li
 | `JWT_SECRET` | identity, api-gateway, realtime-gateway | Secreto para firmar y validar el token de sesión (mínimo 32 caracteres) |
 | `DB_URL` `DB_USER` `DB_PASSWORD` | identity, auction, wallet, streaming | Conexión a su base |
 | `RABBIT_HOST` `RABBIT_PORT` `RABBIT_USER` `RABBIT_PASSWORD` | Todos menos el api-gateway | Broker |
-| `REDIS_HOST` | realtime-gateway | Presencia y backplane |
+| `REDIS_HOST` | realtime-gateway, identity, api-gateway | Presencia, backplane, límites anti-abuso, tickets del WebSocket y sesiones cerradas |
 | `IDENTITY_URL` `AUCTION_URL` `WALLET_URL` `STREAMING_URL` | api-gateway | Destino de cada grupo de rutas |
 | `AUCTION_URL` | realtime-gateway, streaming | Reenvío de pujas; verificación de dueño y estado |
 | `WALLET_URL` | auction | Consulta síncrona de saldo |
