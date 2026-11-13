@@ -277,6 +277,8 @@ flowchart TB
 | Video | Contenedor LiveKit | LiveKit Cloud |
 | Imágenes | Build local | Azure Container Registry |
 
+La configuración de secretos y variables que necesitan los pipelines está en [`docs/CONFIGURACION-CI.md`](docs/CONFIGURACION-CI.md).
+
 ## 8. Operación
 
 | Tarea | Cómo |
