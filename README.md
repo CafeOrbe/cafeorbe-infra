@@ -305,6 +305,9 @@ Para apagar: la misma llamada con `stop` en lugar de `start`, y al final `az pos
 
 ## 9. Decisiones de arquitectura
 
+La configuración, prueba de caos y evidencia del escenario de disponibilidad están documentadas en
+[`docs/DIS-01.md`](docs/DIS-01.md).
+
 | Decisión | Motivo | Costo aceptado |
 |---|---|---|
 | Un repositorio por servicio y uno de infraestructura | Cada servicio se compila, versiona y despliega por separado | Levantar todo exige clonar nueve repositorios en la misma carpeta |
