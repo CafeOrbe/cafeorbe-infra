@@ -51,7 +51,7 @@ cd cafeorbe-infra/scripts
 | Paso | Comando | Efecto |
 |---|---|---|
 | 1 | `az postgres flexible-server start` | Inicia Postgres |
-| 2 | `az containerapp update --min-replicas 1` × 6 | Las apps vuelven a 1 réplica |
+| 2 | Ejecutar `scripts/azure-encender.sh` | Los servicios base vuelven a 1 réplica y los críticos a 2–4 (DIS-01) |
 
 **Tiempo de recuperación:** ~2 minutos (los servicios Spring Boot tardan 60-90s en arrancar).
 
@@ -83,7 +83,7 @@ cd cafeorbe-infra/scripts
    az redis update -n cafeorbe-redis -g cafeorbe-org --enable-non-ssl-port true
    ```
 
-3. **Los deploys reactivan las apps.** Si alguien hace push a `main`, el workflow despliega con `--min-replicas 1` — la app se enciende sola aunque la hayamos apagado. Para mantener todo apagado, no pushear (o apagar después del deploy).
+3. **Los deploys reactivan las apps.** Si alguien hace push a `main`, los servicios críticos se despliegan con mínimo 2 réplicas y los demás con 1. Para mantener todo apagado, no pushear (o apagar después del deploy).
 
 ---
 
