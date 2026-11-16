@@ -19,6 +19,7 @@ const WS = process.env.WS_URL ?? 'wss://realtime-gateway.blackbay-48700ead.eastu
 const SUBASTA = process.env.REN01_SUBASTA
 const N = arg('--clientes', 60), PPS = arg('--pps', 5), ANTES = arg('--antes', 30), DESPUES = arg('--despues', 90)
 const SIN_CAOS = process.argv.includes('--sin-caos')
+process.on('SIGINT', () => process.exit(130))
 const GRUPO = process.env.RESOURCE_GROUP ?? 'cafeorbe-org'
 if (!SUBASTA) throw new Error('Falta REN01_SUBASTA')
 
@@ -102,9 +103,14 @@ function replicas(app) {
 
 function matar({ app, rev, nombres, contenedor }) {
   const victima = nombres[0]
-  // Igual que scripts/dis-01-caos.sh: termina PID 1 y Azure repone la réplica. La desconexión de exec es lo esperado.
-  spawn('timeout', ['20s', 'az', 'containerapp', 'exec', '-g', GRUPO, '-n', app, '--revision', rev, '--replica', victima,
-    '--container', contenedor, '--command', "/bin/sh -c 'kill -9 1'"], { stdio: 'ignore' })
+  // Termina PID 1 y Azure repone la réplica; la desconexión de exec es lo esperado. `az containerapp exec` necesita
+  // una terminal (sin TTY no ejecuta nada), por eso va dentro de `script`; y --command se parte por espacios, así
+  // que no admite comillas: se usa `kill -9 1` directo (la imagen trae /bin/kill).
+  const cmd = `timeout 25s az containerapp exec -g ${GRUPO} -n ${app} --revision ${rev} --replica ${victima} --container ${contenedor} --command "kill -9 1"`
+  const p = spawn('script', ['-qec', cmd, '/dev/null'], { stdio: ['pipe', 'pipe', 'pipe'] })
+  let salida = ''
+  p.stdout.on('data', (d) => { salida += d })
+  p.on('exit', () => { if (!/Connect|Disconnect/i.test(salida)) console.log(`⚠️ exec en ${app}: ${salida.slice(-300)}`) })
   return { app, victima }
 }
 
