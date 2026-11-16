@@ -14,7 +14,9 @@ const API = process.env.API_URL ?? 'https://api-gateway.blackbay-48700ead.eastus
 const arg = (nombre, defecto) => { const i = process.argv.indexOf(nombre); return i > 0 ? Number(process.argv[i + 1]) : defecto }
 const N = arg('--compradores', 200)
 const MINUTOS = arg('--minutos', 30)
-const sufijo = Date.now().toString(36)
+// --sufijo reutiliza las mismas personas de una preparación anterior (con SIN_REGISTRO=1 no se vuelven a registrar).
+const iSufijo = process.argv.indexOf('--sufijo')
+const sufijo = iSufijo > 0 ? process.argv[iSufijo + 1] : Date.now().toString(36)
 
 async function http(metodo, ruta, token, cuerpo) {
   const r = await fetch(API + ruta, { method: metodo, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -35,7 +37,7 @@ for (let i = 0; i < N; i += 5) {
 }
 const subastador = await sesionDePrueba(`ren01-${sufijo}-subastador`, 'SUBASTADOR')
 
-// wallet carga los Orbes iniciales por evento: se espera a que el último comprador tenga saldo.
+// wallet carga los Orbes iniciales por evento (unos 2 por segundo en QA): se espera a que el último tenga saldo.
 const ultimo = compradores.at(-1)
 for (let intento = 0; ; intento++) {
   try {
@@ -43,7 +45,7 @@ for (let intento = 0; ; intento++) {
     if (Number(saldo?.saldo) > 0) { console.log(`Orbes iniciales cargados (saldo ${saldo.saldo}).`); break }
     if (intento % 5 === 0) console.log(`  Esperando los Orbes iniciales del último comprador (saldo ${saldo?.saldo})...`)
   } catch (e) { if (intento === 0) console.log(`Esperando a wallet: ${e.message}`) }
-  if (intento > 30) throw new Error('wallet no cargó los Orbes iniciales en 60 s')
+  if (intento > 180) throw new Error('wallet no cargó los Orbes iniciales en 6 min')
   await new Promise((r) => setTimeout(r, 2000))
 }
 
