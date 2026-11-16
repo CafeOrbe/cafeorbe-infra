@@ -3,14 +3,14 @@
 #
 # Uso, en Azure Cloud Shell (Bash):
 #   ./scripts/ren-01-carga.sh preparar    # auction y realtime a 1 vCPU / 2 GiB con 2 réplicas fijas
-#   ./scripts/ren-01-carga.sh correr      # contenedor en East US 2 con carga-sala.mjs (200 compradores, 20 pujas/s, 10 min)
-#   ./scripts/ren-01-carga.sh correr-aqui # lo mismo desde esta Cloud Shell, si Container Instances no está disponible
-#   ./scripts/ren-01-carga.sh resultado   # salida del contenedor (se puede repetir mientras corre)
 #   ./scripts/ren-01-carga.sh restaurar   # borra el contenedor y devuelve CPU, memoria y réplicas a lo que había
+#   ./scripts/ren-01-carga.sh resultado   # salida de un contenedor de carga antiguo, si quedó alguno
 #
-# Los secretos (JWT_SECRET y la clave del broker) se leen de las Container Apps y se pasan al contenedor como
-# variables seguras: no se imprimen ni se guardan. Variables opcionales: RESOURCE_GROUP, REGION, COMPRADORES,
-# PUJAS_POR_SEG, SOSTENIDA_MIN, RAMA (rama de cafeorbe-infra de donde se descargan los scripts).
+# La carga y la certificación ya NO se corren desde aquí: 'correr' y 'correr-aqui' usaban MODO=sostenida de
+# verificacion/carga-sala.mjs, que el generador oficial retiró (infra #6), y daban un veredicto propio. El flujo
+# oficial está en verificacion/ren01 (preparar-ren01.mjs + evidencia-ren01/EJECUTAR-QA.ps1, ver
+# evidencia-ren01/EJECUCION-FORMAL.md): valida que el destino sea QA, exige la carga completa y certifica con
+# aceptacion.json/INFORME.md. Variables opcionales: RESOURCE_GROUP, REGION.
 set -euo pipefail
 
 GRUPO="${RESOURCE_GROUP:-cafeorbe-org}"
@@ -18,8 +18,6 @@ REGION="${REGION:-eastus2}"
 CONTENEDOR="cafeorbe-carga-ren01"
 APPS=(auction-service realtime-gateway)
 ESTADO="${HOME}/.cafeorbe-ren01-estado"
-RAMA="${RAMA:-main}"
-SCRIPTS="https://raw.githubusercontent.com/CafeOrbe/cafeorbe-infra/${RAMA}/verificacion"
 
 command -v az >/dev/null || { echo "Falta Azure CLI (az): usa Azure Cloud Shell." >&2; exit 1; }
 az extension add --name containerapp --upgrade --only-show-errors >/dev/null
@@ -67,62 +65,24 @@ preparar() {
       echo "  $app: no se pudo confirmar (CPU ${cpu:-?}); revísalo en el portal antes de correr" >&2
     fi
   done
-  echo "✓ Listo. Sigue con: $0 correr"
+  echo "✓ Listo. Sigue con el flujo oficial: verificacion/ren01/evidencia-ren01/EJECUCION-FORMAL.md"
 }
 
-correr() {
-  local jwt broker_clave api ws
-  jwt="$(variable identity-service JWT_SECRET)"
-  broker_clave="$(variable realtime-gateway RABBIT_PASSWORD)"
-  [[ -n "$jwt" && "$jwt" != None && -n "$broker_clave" && "$broker_clave" != None ]] || { echo "No se pudieron leer JWT_SECRET o RABBIT_PASSWORD de las Container Apps." >&2; exit 1; }
-  api="https://$(url api-gateway)"
-  ws="wss://$(url realtime-gateway)"
-  # Registrar un proveedor exige permisos sobre toda la suscripción: solo se intenta si hace falta.
-  if [[ "$(az provider show --namespace Microsoft.ContainerInstance --query registrationState -o tsv)" != Registered ]]; then
-    az provider register --namespace Microsoft.ContainerInstance --wait -o none || {
-      echo "Container Instances no está registrado en la suscripción y este usuario no puede registrarlo." >&2
-      echo "Usa '$0 correr-aqui' (corre la carga desde Cloud Shell) o pide al dueño de la suscripción que lo registre." >&2
-      exit 1
-    }
-  fi
-  az container delete -g "$GRUPO" -n "$CONTENEDOR" -y -o none 2>/dev/null || true
-  echo "→ Contenedor $CONTENEDOR en $REGION contra $api"
-  az container create -g "$GRUPO" -n "$CONTENEDOR" -l "$REGION" \
-    --image mcr.microsoft.com/devcontainers/javascript-node:22 --os-type Linux --cpu 2 --memory 4 --restart-policy Never \
-    --environment-variables API_URL="$api" WS_URL="$ws" MODO=sostenida \
-      COMPRADORES="${COMPRADORES:-200}" PUJAS_POR_SEG="${PUJAS_POR_SEG:-20}" SOSTENIDA_MIN="${SOSTENIDA_MIN:-10}" \
-      BROKER_API_URL=https://toucan.lmq.cloudamqp.com BROKER_USER=ebmfpsvi BROKER_VHOST=ebmfpsvi \
-    --secure-environment-variables JWT_SECRET="$jwt" BROKER_PASSWORD="$broker_clave" \
-    --command-line "bash -c 'cd /tmp && curl -fsSLO $SCRIPTS/carga-sala.mjs && curl -fsSLO $SCRIPTS/sesiones-de-prueba.mjs && node carga-sala.mjs'" \
-    -o none
-  echo "✓ La prueba arrancó (dura unos 12 minutos). Mira el avance con: $0 resultado"
-  echo "  Mientras corre, revisa en Grafana el tablero técnico (REN-01) y en Azure la CPU de auction y realtime."
-}
+# Retirado: la carga y la certificación de REN-01 se hacen con el flujo oficial (ver cabecera).
+retirado() {
+  cat >&2 <<'AVISO'
+'correr' y 'correr-aqui' se retiraron: usaban MODO=sostenida (ya no existe en el generador oficial) y
+certificaban por su cuenta. Para REN-01 usa el flujo oficial, desde Cloud Shell:
 
-# Alternativa sin Container Instances: corre la carga en esta misma sesión de Cloud Shell (también dentro de
-# Azure). Usa Node 22 por npx porque el Node de Cloud Shell puede no traer WebSocket. Los secretos solo existen
-# en el entorno de este proceso. Primero mide la latencia hasta el gateway para dejarla en la evidencia.
-correr_aqui() {
-  local jwt broker_clave api ws carpeta
-  jwt="$(variable identity-service JWT_SECRET)"
-  broker_clave="$(variable realtime-gateway RABBIT_PASSWORD)"
-  [[ -n "$jwt" && "$jwt" != None && -n "$broker_clave" && "$broker_clave" != None ]] || { echo "No se pudieron leer JWT_SECRET o RABBIT_PASSWORD de las Container Apps." >&2; exit 1; }
-  api="https://$(url api-gateway)"
-  ws="wss://$(url realtime-gateway)"
-  carpeta="$(mktemp -d)"
-  curl -fsSL -o "$carpeta/carga-sala.mjs" "$SCRIPTS/carga-sala.mjs"
-  curl -fsSL -o "$carpeta/sesiones-de-prueba.mjs" "$SCRIPTS/sesiones-de-prueba.mjs"
-  echo "Latencia de esta Cloud Shell al gateway (5 lecturas de /actuator/health):"
-  for _ in 1 2 3 4 5; do curl -s -o /dev/null -w "  %{time_total} s\n" "$api/actuator/health"; done
-  echo "→ Carga desde Cloud Shell contra $api (dura unos 12 minutos; no cierres esta pestaña)"
-  ( cd "$carpeta" && API_URL="$api" WS_URL="$ws" MODO=sostenida \
-      COMPRADORES="${COMPRADORES:-200}" PUJAS_POR_SEG="${PUJAS_POR_SEG:-20}" SOSTENIDA_MIN="${SOSTENIDA_MIN:-10}" \
-      BROKER_API_URL=https://toucan.lmq.cloudamqp.com BROKER_USER=ebmfpsvi BROKER_VHOST=ebmfpsvi \
-      JWT_SECRET="$jwt" BROKER_PASSWORD="$broker_clave" \
-      npx -y node@22 carga-sala.mjs ) | tee "${HOME}/ren-01-resultado.txt"
-  echo "Salida guardada en ${HOME}/ren-01-resultado.txt"
-}
+  cd verificacion/ren01
+  node preparar-ren01.mjs                     # 200 compradores y una subasta EN_CURSO
+  export REN01_SUBASTA=$(cat .subasta-ren01)
+  pwsh -NoProfile -File ./evidencia-ren01/EJECUTAR-QA.ps1
 
+Detalle y criterios de aceptación: verificacion/ren01/evidencia-ren01/EJECUCION-FORMAL.md
+AVISO
+  exit 2
+}
 resultado() {
   az container show -g "$GRUPO" -n "$CONTENEDOR" --query "containers[0].instanceView.currentState.{estado:state, codigo:exitCode, inicio:startTime, fin:finishTime}" -o table
   az container logs -g "$GRUPO" -n "$CONTENEDOR"
@@ -149,9 +109,8 @@ restaurar() {
 
 case "${1:-}" in
   preparar) preparar ;;
-  correr) correr ;;
-  correr-aqui) correr_aqui ;;
+  correr|correr-aqui) retirado ;;
   resultado) resultado ;;
   restaurar) restaurar ;;
-  *) echo "Uso: $0 preparar|correr|correr-aqui|resultado|restaurar" >&2; exit 2 ;;
+  *) echo "Uso: $0 preparar|restaurar|resultado" >&2; exit 2 ;;
 esac
