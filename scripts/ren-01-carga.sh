@@ -4,6 +4,7 @@
 # Uso, en Azure Cloud Shell (Bash):
 #   ./scripts/ren-01-carga.sh preparar    # auction y realtime a 1 vCPU / 2 GiB con 2 réplicas fijas
 #   ./scripts/ren-01-carga.sh correr      # contenedor en East US 2 con carga-sala.mjs (200 compradores, 20 pujas/s, 10 min)
+#   ./scripts/ren-01-carga.sh correr-aqui # lo mismo desde esta Cloud Shell, si Container Instances no está disponible
 #   ./scripts/ren-01-carga.sh resultado   # salida del contenedor (se puede repetir mientras corre)
 #   ./scripts/ren-01-carga.sh restaurar   # borra el contenedor y devuelve CPU, memoria y réplicas a lo que había
 #
@@ -152,5 +153,5 @@ case "${1:-}" in
   correr-aqui) correr_aqui ;;
   resultado) resultado ;;
   restaurar) restaurar ;;
-  *) echo "Uso: $0 preparar|correr|resultado|restaurar" >&2; exit 2 ;;
+  *) echo "Uso: $0 preparar|correr|correr-aqui|resultado|restaurar" >&2; exit 2 ;;
 esac
