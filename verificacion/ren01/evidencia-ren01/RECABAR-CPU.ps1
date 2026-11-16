@@ -65,6 +65,16 @@ foreach ($renApp in @('auction-service','realtime-gateway')) {
   if (-not $renParsed.value -or -not (@($renParsed.value | Where-Object { $_.name.value -eq 'UsageNanoCores' }).Count)) {
     throw "Respuesta CPU sin UsageNanoCores para $renApp. No se reemplaza evidencia anterior."
   }
+  $renSeries = @($renParsed.value | ForEach-Object { $_.timeseries } | Where-Object { $_ })
+  if ($renSeries.Count -eq 0) {
+    # Este ambiente no publica la dimension por replica: se pide la serie total (Maximum = maximo entre replicas).
+    $renQuery.Remove('$filter'); $renQuery.Remove('ValidateDimensions')
+    $renQueryText = ($renQuery.GetEnumerator() | ForEach-Object { [Uri]::EscapeDataString([string]$_.Key) + '=' + [Uri]::EscapeDataString([string]$_.Value) }) -join '&'
+    $renUrl = 'https://management.azure.com' + $renConfig.id + '/providers/Microsoft.Insights/metrics?' + $renQueryText
+    $renUrl | Add-Content -LiteralPath (Join-Path $Destino "cpu-consulta-$renApp.txt") -Encoding UTF8
+    $renMetrics = Invoke-RenAzure @('rest','--subscription',$renSubscription,'--method','get','--url',$renUrl,'--only-show-errors','-o','json')
+    if ($renAzureExit -ne 0) { throw "No se pudo consultar la CPU total de $renApp" }
+  }
   $renMetrics | Set-Content -LiteralPath (Join-Path $Destino "cpu-$renApp.json") -Encoding UTF8
 }
 Write-Output 'CPU cruda por podName/revisionName guardada; comprobar cobertura completa de la ventana y normalizar por CPU de cada revisión.'

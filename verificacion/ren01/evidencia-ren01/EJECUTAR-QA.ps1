@@ -75,7 +75,8 @@ try {
   New-Item -ItemType File -Path (Join-Path $renOutput 'fin-observador') | Out-Null
   Wait-Job $renObserver -Timeout 60 | Out-Null
   if($renObserver.State -ne 'Completed') { Stop-Job $renObserver; throw 'Observador incompleto; evidencia no certificable.' }
-  Receive-Job $renObserver -ErrorAction Stop | Out-Null
+  # Los errores de consulta de Azure quedan registrados en cada muestra (error<>0); certificar.mjs los evalua.
+  Receive-Job $renObserver -ErrorAction SilentlyContinue | Out-Null
   $renAfter=& $renPy (Join-Path $PSScriptRoot 'snapshot-pg.py')
   if($LASTEXITCODE -ne 0) { throw 'No se pudo consultar PostgreSQL al finalizar.' }
   $renAfter | Set-Content -LiteralPath (Join-Path $renOutput 'postgres-despues.json') -Encoding UTF8
