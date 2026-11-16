@@ -76,7 +76,14 @@ correr() {
   [[ -n "$jwt" && "$jwt" != None && -n "$broker_clave" && "$broker_clave" != None ]] || { echo "No se pudieron leer JWT_SECRET o RABBIT_PASSWORD de las Container Apps." >&2; exit 1; }
   api="https://$(url api-gateway)"
   ws="wss://$(url realtime-gateway)"
-  az provider register --namespace Microsoft.ContainerInstance --wait -o none
+  # Registrar un proveedor exige permisos sobre toda la suscripción: solo se intenta si hace falta.
+  if [[ "$(az provider show --namespace Microsoft.ContainerInstance --query registrationState -o tsv)" != Registered ]]; then
+    az provider register --namespace Microsoft.ContainerInstance --wait -o none || {
+      echo "Container Instances no está registrado en la suscripción y este usuario no puede registrarlo." >&2
+      echo "Usa '$0 correr-aqui' (corre la carga desde Cloud Shell) o pide al dueño de la suscripción que lo registre." >&2
+      exit 1
+    }
+  fi
   az container delete -g "$GRUPO" -n "$CONTENEDOR" -y -o none 2>/dev/null || true
   echo "→ Contenedor $CONTENEDOR en $REGION contra $api"
   az container create -g "$GRUPO" -n "$CONTENEDOR" -l "$REGION" \
@@ -89,6 +96,30 @@ correr() {
     -o none
   echo "✓ La prueba arrancó (dura unos 12 minutos). Mira el avance con: $0 resultado"
   echo "  Mientras corre, revisa en Grafana el tablero técnico (REN-01) y en Azure la CPU de auction y realtime."
+}
+
+# Alternativa sin Container Instances: corre la carga en esta misma sesión de Cloud Shell (también dentro de
+# Azure). Usa Node 22 por npx porque el Node de Cloud Shell puede no traer WebSocket. Los secretos solo existen
+# en el entorno de este proceso. Primero mide la latencia hasta el gateway para dejarla en la evidencia.
+correr_aqui() {
+  local jwt broker_clave api ws carpeta
+  jwt="$(variable identity-service JWT_SECRET)"
+  broker_clave="$(variable realtime-gateway RABBIT_PASSWORD)"
+  [[ -n "$jwt" && "$jwt" != None && -n "$broker_clave" && "$broker_clave" != None ]] || { echo "No se pudieron leer JWT_SECRET o RABBIT_PASSWORD de las Container Apps." >&2; exit 1; }
+  api="https://$(url api-gateway)"
+  ws="wss://$(url realtime-gateway)"
+  carpeta="$(mktemp -d)"
+  curl -fsSL -o "$carpeta/carga-sala.mjs" "$SCRIPTS/carga-sala.mjs"
+  curl -fsSL -o "$carpeta/sesiones-de-prueba.mjs" "$SCRIPTS/sesiones-de-prueba.mjs"
+  echo "Latencia de esta Cloud Shell al gateway (5 lecturas de /actuator/health):"
+  for _ in 1 2 3 4 5; do curl -s -o /dev/null -w "  %{time_total} s\n" "$api/actuator/health"; done
+  echo "→ Carga desde Cloud Shell contra $api (dura unos 12 minutos; no cierres esta pestaña)"
+  ( cd "$carpeta" && API_URL="$api" WS_URL="$ws" MODO=sostenida \
+      COMPRADORES="${COMPRADORES:-200}" PUJAS_POR_SEG="${PUJAS_POR_SEG:-20}" SOSTENIDA_MIN="${SOSTENIDA_MIN:-10}" \
+      BROKER_API_URL=https://toucan.lmq.cloudamqp.com BROKER_USER=ebmfpsvi BROKER_VHOST=ebmfpsvi \
+      JWT_SECRET="$jwt" BROKER_PASSWORD="$broker_clave" \
+      npx -y node@22 carga-sala.mjs ) | tee "${HOME}/ren-01-resultado.txt"
+  echo "Salida guardada en ${HOME}/ren-01-resultado.txt"
 }
 
 resultado() {
@@ -118,6 +149,7 @@ restaurar() {
 case "${1:-}" in
   preparar) preparar ;;
   correr) correr ;;
+  correr-aqui) correr_aqui ;;
   resultado) resultado ;;
   restaurar) restaurar ;;
   *) echo "Uso: $0 preparar|correr|resultado|restaurar" >&2; exit 2 ;;
