@@ -57,13 +57,11 @@ echo "DIS-01 · ambiente=$AMBIENTE app=$APP revision=$revision réplicas=${#repl
 echo "Se terminará una réplica y se harán $MUESTRAS consultas a una ruta real de auction."
 
 # La desconexión de exec es el resultado esperado: PID 1 termina y Azure crea otra réplica.
-timeout 20s az containerapp exec \
-  --name "$APP" \
-  --resource-group "$GRUPO_RECURSOS" \
-  --revision "$revision" \
-  --replica "$victima" \
-  --container "$contenedor" \
-  --command "/bin/sh -c 'kill -9 1'" </dev/null >/dev/null 2>&1 &
+# - El kernel ignora SIGKILL a PID 1 desde su propio espacio de procesos: `kill -9 1` no hacía nada. La JVM
+#   atiende SIGTERM y termina, así que se envía TERM.
+# - `az containerapp exec` necesita una terminal (sin TTY no ejecuta el comando): se usa `script`.
+# - --command se parte por espacios: no admite `sh -c '...'` con comillas.
+script -qec "timeout 25s az containerapp exec --name $APP --resource-group $GRUPO_RECURSOS --revision $revision --replica $victima --container $contenedor --command 'kill -TERM 1'" /dev/null >/dev/null 2>&1 &
 pid_caos=$!
 
 errores=0
