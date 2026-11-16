@@ -7,7 +7,8 @@ QA se pasan `API_URL` y `WS_URL`. CaféOrbe solo admite login con Google, así q
 | Script | Qué verifica |
 |---|---|
 | `seguridad-qa.mjs` | SEG-01, SEG-02 y SEG-03 con sus medidas. Reporte: [`docs/SEGURIDAD.md`](../docs/SEGURIDAD.md) |
-| `carga-sala.mjs` | Sala con N compradores. `MODO=sostenida` mide REN-01 (200 compradores, 20 pujas/s, 10 min) |
+| `carga-sala.mjs` | Sala con N compradores pujando por turnos. Ya no mide REN-01: `MODO=sostenida` está retirado |
+| `ren01/carga-sala.mjs` | **Generador oficial de REN-01** (200 compradores, 12.000 pujas a 20/s en 10 min, programadas por índice). El dictamen lo da `ren01/evidencia-ren01/certificar.mjs` |
 | `e2e-sprint1.mjs`, `e2e-sprint2.mjs` | Historias de usuario de punta a punta por la API |
 | `ui-sprint1.mjs`, `ui-sprint2.mjs`, `ui-publicado.mjs` | Recorridos en el navegador (Chrome por CDP) |
 | `sesiones-de-prueba.mjs` | Módulo compartido: firma sesiones y registra a la persona en wallet por el broker |

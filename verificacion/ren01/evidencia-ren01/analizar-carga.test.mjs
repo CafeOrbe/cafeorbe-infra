@@ -5,7 +5,7 @@ function fixture() {
   const row={monto:1100,usuarioId:'u1'};
   const m={versionMedicion:2,configuracion:{usuarios:200,duracionSegundos:600,tasaObjetivo:20},
     ventana:{duracionRealMs:600001},conexiones:{minimoDuranteCarga:200,finalesActivas:200,desconexiones:0,erroresConexion:0},
-    enviosPorSegundo:Array(600).fill(20),pujas:{enviadas:12000,aceptadas:1,rechazadas:11999,pendientes:0,respuestasNoCorrelacionadas:0,erroresHttpOTransporte:0,
+    enviosPorSegundo:Array(600).fill(20),generador:{totalProgramados:12000,sinEmisor:0,retrasoMaximoMs:3,enviosConRetrasoMayorAIntervalo:0},pujas:{enviadas:12000,aceptadas:1,rechazadas:11999,pendientes:0,respuestasNoCorrelacionadas:0,erroresHttpOTransporte:0,
       intentos:Array.from({length:12000},(_,i)=>({estado:i?'rechazada':'aceptada',receptores:i?0:200}))},
     eventos:{aceptadosPorSocket:Array.from({length:200},()=>[{cantidad:11,...row,latenciaMs:400}]),duplicados:0,fueraDeOrden:0,perdidosGaps:0,erroresAplicacion:0,mensajesInvalidos:0},
     latenciasMs:Array(200).fill(400),resumenLatencia:{p95:400,p99:400},baseline:{cantidadPujas:10,precioActual:1000},estadoFinal:{cantidadPujas:11}};
@@ -20,3 +20,6 @@ test('no acepta una media de 20/s si hubo una ventana sin carga',()=>{const {m,p
 test('no acepta latencias vacias aunque los percentiles guardados sean cero',()=>{const {m,pg}=fixture();m.latenciasMs=[];m.resumenLatencia={p95:0,p99:0};assert(!passes(m,pg));});
 test('no acepta intentos pendientes ni ejecucion abortada',()=>{const {m,pg}=fixture();m.pujas.pendientes=1;m.errorEjecucion='abortada';assert(!passes(m,pg));});
 test('sin PostgreSQL no certifica ganador ni entrega completa',()=>{const {m}=fixture();assert(!passes(m,null));});
+test('REGRESION: no aprueba con 11.994 de 12.000 envios aunque los bloques parezcan llenos',()=>{const {m,pg}=fixture();m.pujas.enviadas=11994;assert(!passes(m,pg));});
+test('REGRESION: no aprueba si hubo turnos sin comprador disponible',()=>{const {m,pg}=fixture();m.generador.sinEmisor=6;assert(!passes(m,pg));});
+test('REGRESION: no aprueba resultados de un generador sin datos de programacion (generador antiguo)',()=>{const {m,pg}=fixture();delete m.generador;assert(!passes(m,pg));});
