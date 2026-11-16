@@ -1,0 +1,162 @@
+{
+    "observadoEn":  "2026-11-16T13:25:31.8633231+00:00",
+    "suscripcion":  "837dbf3b-86e9-4dee-9fa9-1d1dce8af6e0",
+    "grupo":  "cafeorbe-org",
+    "apps":  [
+                 {
+                     "nombre":  "auction-service",
+                     "ambiente":  "/subscriptions/837dbf3b-86e9-4dee-9fa9-1d1dce8af6e0/resourceGroups/cafeorbe-org/providers/Microsoft.App/managedEnvironments/cafeorbe-qa",
+                     "region":  "East US 2",
+                     "readiness":  "UP",
+                     "trafico":  null,
+                     "escala":  {
+                                    "cooldownPeriod":  null,
+                                    "maxReplicas":  4,
+                                    "minReplicas":  2,
+                                    "pollingInterval":  null,
+                                    "rules":  [
+                                                  {
+                                                      "http":  {
+                                                                   "metadata":  {
+                                                                                    "concurrentRequests":  "20"
+                                                                                }
+                                                               },
+                                                      "name":  "http-concurrency"
+                                                  }
+                                              ]
+                                },
+                     "revisiones":  [
+                                        {
+                                            "nombre":  "auction-service--latest",
+                                            "healthState":  "Healthy",
+                                            "replicas":  2,
+                                            "containers":  [
+                                                               {
+                                                                   "nombre":  "auction-service",
+                                                                   "imagen":  "cafeorbeacr.azurecr.io/auction-service:f6e5971b5a973cdbca71a1d0616e50587de6e5fa",
+                                                                   "cpu":  0.25,
+                                                                   "memoria":  "0.5Gi"
+                                                               }
+                                                           ]
+                                        }
+                                    ],
+                     "replicas":  [
+                                      {
+                                          "revision":  "auction-service--latest",
+                                          "nombre":  "auction-service--latest-de2594ee-1da8-4d10-b753-f30b7079309b",
+                                          "runningState":  "Running",
+                                          "containers":  {
+                                                             "name":  "auction-service",
+                                                             "ready":  true,
+                                                             "restartCount":  0,
+                                                             "runningState":  "Running"
+                                                         }
+                                      },
+                                      {
+                                          "revision":  "auction-service--latest",
+                                          "nombre":  "auction-service--latest-c7ada9d0-847a-4a94-baa0-06e42b928e78",
+                                          "runningState":  "Running",
+                                          "containers":  {
+                                                             "name":  "auction-service",
+                                                             "ready":  true,
+                                                             "restartCount":  0,
+                                                             "runningState":  "Running"
+                                                         }
+                                      }
+                                  ]
+                 },
+                 {
+                     "nombre":  "realtime-gateway",
+                     "ambiente":  "/subscriptions/837dbf3b-86e9-4dee-9fa9-1d1dce8af6e0/resourceGroups/cafeorbe-org/providers/Microsoft.App/managedEnvironments/cafeorbe-qa",
+                     "region":  "East US 2",
+                     "readiness":  "UP",
+                     "trafico":  null,
+                     "escala":  {
+                                    "cooldownPeriod":  null,
+                                    "maxReplicas":  4,
+                                    "minReplicas":  2,
+                                    "pollingInterval":  null,
+                                    "rules":  [
+                                                  {
+                                                      "http":  {
+                                                                   "metadata":  {
+                                                                                    "concurrentRequests":  "20"
+                                                                                }
+                                                               },
+                                                      "name":  "http-concurrency"
+                                                  }
+                                              ]
+                                },
+                     "revisiones":  [
+                                        {
+                                            "nombre":  "realtime-gateway--latest",
+                                            "healthState":  "Healthy",
+                                            "replicas":  2,
+                                            "containers":  [
+                                                               {
+                                                                   "nombre":  "realtime-gateway",
+                                                                   "imagen":  "cafeorbeacr.azurecr.io/realtime-gateway:ren01-perf",
+                                                                   "cpu":  0.25,
+                                                                   "memoria":  "0.5Gi"
+                                                               }
+                                                           ]
+                                        }
+                                    ],
+                     "replicas":  [
+                                      {
+                                          "revision":  "realtime-gateway--latest",
+                                          "nombre":  "realtime-gateway--latest-67d83359-f0d8-4726-9295-e036817db829",
+                                          "runningState":  "Running",
+                                          "containers":  {
+                                                             "name":  "realtime-gateway",
+                                                             "ready":  true,
+                                                             "restartCount":  0,
+                                                             "runningState":  "Running"
+                                                         }
+                                      },
+                                      {
+                                          "revision":  "realtime-gateway--latest",
+                                          "nombre":  "realtime-gateway--latest-5d7328a4-5898-4a76-9f18-582ce737d702",
+                                          "runningState":  "Running",
+                                          "containers":  {
+                                                             "name":  "realtime-gateway",
+                                                             "ready":  true,
+                                                             "restartCount":  0,
+                                                             "runningState":  "Running"
+                                                         }
+                                      }
+                                  ]
+                 }
+             ],
+    "errores":  [
+
+                ],
+    "postgres":  "NO VERIFICADO: ejecutar verificar-bd.sql",
+    "dictamen":  "NO CERTIFICADO",
+    "api":  {
+                "observadoEn":  "2026-11-16T13:25:58.500Z",
+                "node":  "v24.20.0",
+                "websocketDisponible":  true,
+                "compradores":  {
+                                    "cantidad":  200,
+                                    "idsUnicos":  200,
+                                    "expiracionMasTemprana":  "2026-11-16T18:08:28.000Z",
+                                    "vigentesDurante15Min":  true
+                                },
+                "httpStatus":  200,
+                "subasta":  {
+                                "id":  "79ff79c1-195f-4864-8f32-165e701ba84c",
+                                "estado":  "EN_CURSO",
+                                "horaFin":  "2026-11-17T00:56:37.697755Z",
+                                "precioActual":  1140900,
+                                "siguienteMinimo":  1141000,
+                                "cantidadPujas":  5594,
+                                "reglas":  {
+                                               "duracionMinutos":  1440,
+                                               "precioBase":  1000,
+                                               "incrementoMinimo":  100,
+                                               "version":  1
+                                           }
+                            }
+            }
+}

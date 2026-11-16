@@ -1,0 +1,23 @@
+{
+  "nota": "Originales conservados localmente. No se publican los 52 MB del JSON de carga ni los historiales con IDs de compradores. Estos hashes prueban identidad de archivo, no validan su contenido sin acceso al original.",
+  "archivos": [
+    {
+      "archivo": "resultado-objetivo.json",
+      "bytes": 51865546,
+      "sha256": "94e59a7791f0ed7fdd3cb55a86e5e0c676ab32191af0bb5cd25477202cdf7e05",
+      "publicado": false
+    },
+    {
+      "archivo": "postgres-antes.json",
+      "bytes": 929278,
+      "sha256": "f07a58bfa21836ec18b4352e3ac496ac4d1325cdd78ce9ec966dd7d2bc675e01",
+      "publicado": false
+    },
+    {
+      "archivo": "postgres-despues.json",
+      "bytes": 1092270,
+      "sha256": "f6e85727a66f53cd05b62f8cc32a0c1720891708ae39c1a2a746d169cdaa1e30",
+      "publicado": false
+    }
+  ]
+}

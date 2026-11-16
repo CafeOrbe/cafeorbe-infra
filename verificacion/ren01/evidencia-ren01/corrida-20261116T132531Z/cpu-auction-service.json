@@ -1,0 +1,21 @@
+{
+  "cost": 18,
+  "interval": "PT1M",
+  "namespace": "Microsoft.App/containerapps",
+  "resourceregion": "eastus2",
+  "timespan": "2026-11-16T13:28:02Z/2026-11-16T13:38:02Z",
+  "value": [
+    {
+      "displayDescription": "CPU consumed by the container app, in nano cores. 1,000,000,000 nano cores = 1 core",
+      "errorCode": "Success",
+      "id": "/subscriptions/837dbf3b-86e9-4dee-9fa9-1d1dce8af6e0/resourceGroups/cafeorbe-org/providers/Microsoft.App/containerapps/auction-service/providers/Microsoft.Insights/metrics/UsageNanoCores",
+      "name": {
+        "localizedValue": "CPU Usage",
+        "value": "UsageNanoCores"
+      },
+      "timeseries": [],
+      "type": "Microsoft.Insights/metrics",
+      "unit": "NanoCores"
+    }
+  ]
+}
