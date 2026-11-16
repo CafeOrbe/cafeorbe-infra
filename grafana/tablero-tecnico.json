@@ -1,0 +1,142 @@
+{
+  "__inputs": [
+    { "name": "DS_PROM", "label": "Prometheus", "type": "datasource", "pluginId": "prometheus", "pluginName": "Prometheus" }
+  ],
+  "title": "CaféOrbe · Técnico y seguridad",
+  "uid": "cafeorbe-tecnico",
+  "tags": ["cafeorbe", "sprint2"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 39,
+  "panels": [
+    { "type": "row", "title": "Seguridad (SEG-01 · SEG-02 · SEG-03)", "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+    {
+      "type": "stat", "title": "Infracciones (desde el último despliegue)",
+      "description": "SEG-03: cada réplica envía cada 10 s y el tablero se refresca cada 5 s, así que una infracción se ve en ≤ 15 s.",
+      "gridPos": { "x": 0, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "targets": [{ "refId": "A", "expr": "sum(cafeorbe_seguridad_infracciones_total) or vector(0)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0,
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "type": "stat", "title": "Usuarios bloqueados (desde el último despliegue)",
+      "gridPos": { "x": 6, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "targets": [{ "refId": "A", "expr": "sum(cafeorbe_seguridad_bloqueos_total) or vector(0)" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0,
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "type": "stat", "title": "Verificación de sesión bajo 5 ms (SEG-02, meta ≥ 95 %)",
+      "description": "Solo la verificación del gateway (etapa sesion), sin la consulta a Redis de sesión cerrada ni la credencial interna de los otros servicios. Ventana de 5 min: tras una prueba de abuso, esperar 5 min para leer la operación normal.",
+      "gridPos": { "x": 12, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "targets": [{ "refId": "A", "expr": "100 * sum(rate(cafeorbe_seguridad_verificacion_milliseconds_bucket{application=\"api-gateway\", etapa=\"sesion\", le=~\"5|5.0\"}[5m])) / sum(rate(cafeorbe_seguridad_verificacion_milliseconds_count{application=\"api-gateway\", etapa=\"sesion\"}[5m]))" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 1,
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 95 }] } }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "type": "stat", "title": "Login p95 (SEG-01)",
+      "gridPos": { "x": 18, "y": 1, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_milliseconds_bucket{application=\"identity-service\", uri=\"/api/sesion/google\"}[15m])))" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "type": "timeseries", "title": "Infracciones por motivo",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "sum by (motivo) (cafeorbe_seguridad_infracciones_total)", "legendFormat": "{{motivo}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10 } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Rechazos 401/403 por servicio, evento y motivo (5 min)",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "sum by (application, evento, motivo) (increase(cafeorbe_seguridad_eventos_total{motivo!=\"ok\"}[5m]))", "legendFormat": "{{application}} · {{evento}} · {{motivo}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "bars", "fillOpacity": 60, "stacking": { "mode": "normal" } } }, "overrides": [] }
+    },
+
+    { "type": "row", "title": "Rendimiento (REN-01)", "gridPos": { "x": 0, "y": 14, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+    {
+      "type": "timeseries", "title": "Reenvío de pujas realtime → auction (p95 / p99)",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(cafeorbe_realtime_pujas_reenvio_milliseconds_bucket[1m])))", "legendFormat": "p95" },
+        { "refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(cafeorbe_realtime_pujas_reenvio_milliseconds_bucket[1m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms",
+        "custom": { "thresholdsStyle": { "mode": "line" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 800 }] } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Registro de puja en auction (p95 / p99)",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(cafeorbe_auction_pujas_registro_milliseconds_bucket[1m])))", "legendFormat": "p95" },
+        { "refId": "B", "expr": "histogram_quantile(0.99, sum by (le) (rate(cafeorbe_auction_pujas_registro_milliseconds_bucket[1m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Gateway: % de respuestas 5xx",
+      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "100 * (sum(rate(spring_cloud_gateway_requests_milliseconds_count{outcome=\"SERVER_ERROR\"}[1m])) or vector(0)) / sum(rate(spring_cloud_gateway_requests_milliseconds_count[1m]))", "legendFormat": "5xx %" }],
+      "fieldConfig": { "defaults": { "unit": "percent",
+        "custom": { "thresholdsStyle": { "mode": "line" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Outbox de auction: eventos pendientes",
+      "gridPos": { "x": 12, "y": 23, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "max by (instancia) (cafeorbe_outbox_pendientes)", "legendFormat": "{{instancia}}" }],
+      "fieldConfig": { "defaults": { "unit": "short",
+        "custom": { "thresholdsStyle": { "mode": "line" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 100 }] } }, "overrides": [] }
+    },
+
+    { "type": "row", "title": "Disponibilidad (DIS-01)", "gridPos": { "x": 0, "y": 31, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
+    {
+      "type": "stat", "title": "Réplicas activas por servicio (reportaron en el último minuto)",
+      "gridPos": { "x": 0, "y": 32, "w": 24, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "targets": [{ "refId": "A", "expr": "count by (application) (count by (application, instancia) (count_over_time(process_uptime_milliseconds[1m])))", "legendFormat": "{{application}}" }],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name" }
+    },
+    {
+      "type": "timeseries", "title": "Peticiones por segundo por réplica (reparto ≥ 30 %)",
+      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "sum by (application, instancia) (rate(http_server_requests_milliseconds_count{application=~\"api-gateway|auction-service|realtime-gateway\"}[1m]))", "legendFormat": "{{application}} · {{instancia}}" }],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries", "title": "Participación de cada réplica en auction-service (%)",
+      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "10s",
+      "targets": [{ "refId": "A", "expr": "100 * sum by (instancia) (rate(http_server_requests_milliseconds_count{application=\"auction-service\"}[1m])) / scalar(sum(rate(http_server_requests_milliseconds_count{application=\"auction-service\"}[1m])))", "legendFormat": "{{instancia}}" }],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100,
+        "custom": { "thresholdsStyle": { "mode": "line" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 30 }] } }, "overrides": [] }
+    }
+  ]
+}
