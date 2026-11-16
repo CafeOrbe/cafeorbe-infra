@@ -97,12 +97,16 @@ function az(args) {
 
 function replicas(app) {
   const rev = az(['containerapp', 'revision', 'list', '-g', GRUPO, '-n', app, '--query', '[?properties.active].name | [0]', '-o', 'tsv'])
-  const nombres = az(['containerapp', 'replica', 'list', '-g', GRUPO, '-n', app, '--revision', rev, '--query', '[].name', '-o', 'tsv']).split('\n').filter(Boolean)
+  const lista = JSON.parse(az(['containerapp', 'replica', 'list', '-g', GRUPO, '-n', app, '--revision', rev,
+    '--query', '[].{n:name, r:properties.containers[0].restartCount, s:properties.containers[0].runningState}', '-o', 'json']) || '[]')
+  const nombres = lista.map((x) => x.n)
+  const reinicios = Object.fromEntries(lista.map((x) => [x.n, x.r ?? 0]))
+  const enMarcha = lista.filter((x) => !x.s || /running/i.test(x.s)).length
   const contenedor = az(['containerapp', 'show', '-g', GRUPO, '-n', app, '--query', 'properties.template.containers[0].name', '-o', 'tsv'])
-  return { app, rev, nombres, contenedor }
+  return { app, rev, nombres, reinicios, enMarcha, contenedor }
 }
 
-function matar({ app, rev, nombres, contenedor }) {
+function matar({ app, rev, nombres, reinicios, contenedor }) {
   const victima = nombres[0]
   // Detiene el proceso del servicio (PID 1) y Azure repone la réplica. Detalles que hacían que no pasara nada:
   //  - el kernel ignora SIGKILL enviado a PID 1 desde su propio espacio de procesos: `kill -9 1` no hace nada;
@@ -114,7 +118,7 @@ function matar({ app, rev, nombres, contenedor }) {
   let salida = ''
   p.stdout.on('data', (d) => { salida += d })
   p.on('exit', () => { if (!/Connect|Disconnect/i.test(salida)) console.log(`⚠️ exec en ${app}: ${salida.slice(-300)}`) })
-  return { app, victima }
+  return { app, victima, reiniciosAntes: reinicios[victima] ?? 0 }
 }
 
 // ── Corrida ────────────────────────────────────────────────────────────────
@@ -169,12 +173,19 @@ const err30 = ventana30.filter((s) => s.status !== 200).length
 const errTotal = sondas.filter((s) => s.status !== 200).length
 const maxReconexion = reconexiones.reduce((m, r) => Math.max(m, r.ms), 0)
 
+console.log(`Medición lista (antes de esperar reposición): REST 30 s ${err30}/${ventana30.length} con error · WS máx ${maxReconexion} ms · pujas perdidas ${perdidas.length}`)
 let reposicion = null
 if (antesDeCaos) {
   for (let i = 0; i < MAX_REPOSICION / 5 && !reposicion; i++) {
     const actuales = { auction: replicas('auction-service'), realtime: replicas('realtime-gateway') }
-    const listas = Object.values(actuales).every((r) => r.nombres.length >= 2 && !r.nombres.includes(victimas.find((v) => v.app === r.app).victima))
-    if (listas) reposicion = { observadaEn: iso(ahora()), replicas: Object.fromEntries(Object.entries(actuales).map(([k, r]) => [k, r.nombres])) }
+    // Al terminar PID 1, Container Apps reinicia el contenedor dentro de la MISMA réplica (mismo nombre,
+    // restartCount + 1) o crea una réplica nueva: cualquiera de los dos cuenta como reposición.
+    const listas = Object.values(actuales).every((r) => {
+      const v = victimas.find((x) => x.app === r.app)
+      const repuesta = !r.nombres.includes(v.victima) || (r.reinicios[v.victima] ?? 0) > v.reiniciosAntes
+      return r.nombres.length >= 2 && r.enMarcha >= 2 && repuesta
+    })
+    if (listas) reposicion = { observadaEn: iso(ahora()), replicas: Object.fromEntries(Object.entries(actuales).map(([k, r]) => [k, r.reinicios])) }
     else await esperar(5000)
   }
 }
