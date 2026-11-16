@@ -37,7 +37,7 @@ flowchart LR
 
 | Riesgo | Táctica |
 |---|---|
-| Una réplica deja de responder | Sondas HTTP de startup, liveness y readiness; el ingress retira la réplica. |
+| Una réplica deja de responder | Sondas HTTP de startup, liveness y readiness (esta cada 2 s, fuera del balanceo tras 2 fallos: ≤ 4 s); el ingress retira la réplica. |
 | Un despliegue cierra WebSockets | Realtime envía cierre 1012; el navegador reconecta con espera y variación aleatoria. |
 | Los clientes de realtime quedan repartidos | Redis Pub/Sub difunde cada evento a todas las réplicas. |
 | Quedan usuarios fantasma tras una caída abrupta | Presencia en Redis con latido por réplica y TTL. |
