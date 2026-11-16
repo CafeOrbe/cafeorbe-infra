@@ -19,20 +19,27 @@ for(const app of ['auction-service','realtime-gateway']) {
   const expected=baseline?.replicas?.map(r=>r.nombre).sort() || [];
   const snapshots=replicaRecords.filter(r=>r.app===app);
   const within=snapshots.filter(r=>Date.parse(r.observadoEn)>=start-30000 && Date.parse(r.observadoEn)<=end+30000);
-  const stable=within.length>0 && within.every(r=>r.error===0 && r.replicas.length===2 && r.replicas.map(x=>x.nombre).sort().join()===expected.join() && r.replicas.every(x=>x.runningState==='Running' && [x.containers].flat().length>0 && [x.containers].flat().every(k=>k?.ready && k.restartCount===0)));
-  const stamps=within.map(r=>Date.parse(r.observadoEn)).sort((a,b)=>a-b);
+  // Una consulta que Azure no pudo responder (error) no dice nada de las réplicas: no cuenta como inestable, pero
+  // tampoco como observada. La cobertura (sin huecos de más de 60 s) se exige solo con las muestras válidas.
+  const ok=within.filter(r=>r.error===0);
+  const stable=ok.length>0 && ok.every(r=>r.replicas.length===2 && r.replicas.map(x=>x.nombre).sort().join()===expected.join() && r.replicas.every(x=>x.runningState==='Running' && [x.containers].flat().length>0 && [x.containers].flat().every(k=>k?.ready && k.restartCount===0)));
+  const stamps=ok.map(r=>Date.parse(r.observadoEn)).sort((a,b)=>a-b);
   const covered=stamps.length>0 && stamps[0]<=start+30000 && stamps.at(-1)>=end-30000 && stamps.every((t,i)=>i===0 || t-stamps[i-1]<=60000);
-  add(`${app}: dos replicas estables en muestreo`,!covered?null:expected.length===2 && stable,{replicas:expected,muestras:within.length,intervaloMaximoSegundos:60});
+  add(`${app}: dos replicas estables en muestreo`,!covered?null:expected.length===2 && stable,{replicas:expected,muestras:within.length,muestrasValidas:ok.length,erroresDeConsulta:within.length-ok.length,intervaloMaximoSegundos:60});
   if(!existsSync(join(dir,`cpu-${app}.json`))) { add(`${app}: CPU por replica <80%`,null,'Falta JSON Azure Monitor');continue; }
   const data=read(`cpu-${app}.json`);
   const series=(data.value || []).flatMap(v=>v.timeseries || []);
   const cpus=baseline.revisiones.flatMap(r=>r.containers).filter(r=>r.nombre===app).map(r=>r.cpu);
   if(cpus.length!==1 || !Number.isFinite(cpus[0])) {add(`${app}: CPU por replica <80%`,null,'No se identifica vCPU de la revision');continue;}
+  // Si Azure no separa por réplica, se usa la serie total con agregación Maximum: es el máximo entre todas las
+  // réplicas en cada minuto, así que si está bajo 80 % cada réplica lo está (cota superior, conservadora).
+  const total=series.filter(s=>(s.metadatavalues||s.metadataValues||[]).length===0);
+  const porReplica=series.some(s=>(s.metadatavalues||s.metadataValues||[]).some(v=>/pod|replica/i.test(v.name?.value || '')));
   for(const replica of expected) {
-    const matching=series.filter(s=>(s.metadatavalues||s.metadataValues||[]).some(v=>/pod|replica/i.test(v.name?.value || '') && v.value===replica));
+    const matching=porReplica ? series.filter(s=>(s.metadatavalues||s.metadataValues||[]).some(v=>/pod|replica/i.test(v.name?.value || '') && v.value===replica)) : total;
     // Todos los minutos que se cruzan con la ventana, incluido el último parcial (ver analizar-cpu.mjs).
     const r=evaluarCpuReplica(matching.flatMap(s=>s.data || []),start,end,cpus[0]);
-    add(`${app}/${replica}: CPU <80%`,r.cumple,{maximoPorcentaje:r.maximoPorcentaje,muestras:r.puntos.length,minutosEsperados:r.minutosEsperados,minutosFaltantes:r.minutosFaltantes,coberturaCompleta:r.coberturaCompleta,vcpu:cpus[0]});
+    add(`${app}/${replica}: CPU <80%`,r.cumple,{fuente:porReplica?'serie de la replica':'maximo entre replicas (Azure no separa por replica)',maximoPorcentaje:r.maximoPorcentaje,muestras:r.puntos.length,minutosEsperados:r.minutosEsperados,minutosFaltantes:r.minutosFaltantes,coberturaCompleta:r.coberturaCompleta,vcpu:cpus[0]});
     cpu.push({app,replica,points:r.puntos});
   }
 }

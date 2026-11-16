@@ -1,5 +1,8 @@
 param([string]$Az='C:/Program Files/Microsoft SDKs/Azure/CLI2/wbin/az.cmd')
 $ErrorActionPreference='Stop'
+# Windows PowerShell o pwsh (Cloud Shell), python o python3.
+$renPs=if(Get-Command pwsh -ErrorAction SilentlyContinue){'pwsh'}else{'powershell'}
+$renPy=if(Get-Command python -ErrorAction SilentlyContinue){'python'}else{'python3'}
 $renRoot=Split-Path $PSScriptRoot -Parent
 $renOutput=Join-Path $PSScriptRoot ('corrida-'+[datetime]::UtcNow.ToString('yyyyMMddTHHmmssZ'))
 New-Item -ItemType Directory -Path $renOutput | Out-Null
@@ -24,7 +27,7 @@ function Read-RenEnv($Container,[string]$Name) {
   return $renEntry[0].value
 }
 try {
-  & powershell -NoProfile -File (Join-Path $PSScriptRoot 'PRECHECK-QA.ps1') -Az $Az
+  & $renPs -NoProfile -File (Join-Path $PSScriptRoot 'PRECHECK-QA.ps1') -Az $Az
   if($LASTEXITCODE -ne 0) { throw 'Precheck QA fallido; no se lanzo carga.' }
   $renPre=Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'precheck-qa-*.json' | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
   Copy-Item -LiteralPath $renPre.FullName -Destination (Join-Path $renOutput 'precheck.json')
@@ -41,17 +44,17 @@ try {
   $env:PGPASSWORD=Read-RenEnv $renContainer 'DB_PASSWORD'
   $env:REN_PY_DEPS=Join-Path ([IO.Path]::GetTempPath()) 'cafeorbe-ren01-pg8000'
   if(-not (Test-Path -LiteralPath (Join-Path $env:REN_PY_DEPS 'pg8000'))) {
-    & python -m pip install --quiet --target $env:REN_PY_DEPS pg8000
+    & $renPy -m pip install --quiet --target $env:REN_PY_DEPS pg8000
     if($LASTEXITCODE -ne 0) { throw 'No se pudo instalar pg8000 en la carpeta temporal.' }
   }
-  $renBefore=& python (Join-Path $PSScriptRoot 'snapshot-pg.py')
+  $renBefore=& $renPy (Join-Path $PSScriptRoot 'snapshot-pg.py')
   if($LASTEXITCODE -ne 0) { throw "No se pudo consultar PostgreSQL: $renBefore" }
   $renPg=$renBefore | ConvertFrom-Json
   $renBefore | Set-Content -LiteralPath (Join-Path $renOutput 'postgres-antes.json') -Encoding UTF8
   if($renPg.conexionesCliente -ge 25) { throw "PostgreSQL tiene $($renPg.conexionesCliente) conexiones; se exige <25 antes de carga." }
   Write-Output "PostgreSQL: $($renPg.conexionesCliente) conexiones. Ejecutando carga; evidencia en $renOutput"
-  $renObserver=Start-Job -ArgumentList $Az,$renSub,$renOutput,$PSScriptRoot -ScriptBlock {
-    param($renAzLocal,$renSubscription,$renFolder,$renScripts)
+  $renObserver=Start-Job -ArgumentList $Az,$renSub,$renOutput,$PSScriptRoot,$renPy -ScriptBlock {
+    param($renAzLocal,$renSubscription,$renFolder,$renScripts,$renPyLocal)
     while(-not (Test-Path -LiteralPath (Join-Path $renFolder 'fin-observador'))) {
       foreach($renApp in @('auction-service','realtime-gateway')) {
         $renRaw=& $renAzLocal containerapp replica list --subscription $renSubscription --resource-group cafeorbe-org --name $renApp -o json --only-show-errors
@@ -59,7 +62,7 @@ try {
         try { $renReplicas=(($renRaw -join "`n") | ConvertFrom-Json) } catch { $renReplicas=@(); $renExit=1 }
         [ordered]@{observadoEn=[datetimeoffset]::UtcNow.ToString('o'); app=$renApp; error=$renExit; replicas=@($renReplicas | ForEach-Object { [ordered]@{nombre=$_.name; runningState=$_.properties.runningState; containers=$_.properties.containers | Select-Object name,ready,restartCount,runningState} })} | ConvertTo-Json -Depth 8 -Compress | Add-Content -LiteralPath (Join-Path $renFolder 'replicas.ndjson') -Encoding UTF8
       }
-      $renPgRaw=& python (Join-Path $renScripts 'snapshot-pg.py') --count-only
+      $renPgRaw=& $renPyLocal (Join-Path $renScripts 'snapshot-pg.py') --count-only
       $renPgRaw | Add-Content -LiteralPath (Join-Path $renFolder 'postgres-conexiones.ndjson') -Encoding UTF8
       Start-Sleep -Seconds 15
     }
@@ -72,14 +75,15 @@ try {
   New-Item -ItemType File -Path (Join-Path $renOutput 'fin-observador') | Out-Null
   Wait-Job $renObserver -Timeout 60 | Out-Null
   if($renObserver.State -ne 'Completed') { Stop-Job $renObserver; throw 'Observador incompleto; evidencia no certificable.' }
-  Receive-Job $renObserver -ErrorAction Stop | Out-Null
-  $renAfter=& python (Join-Path $PSScriptRoot 'snapshot-pg.py')
+  # Los errores de consulta de Azure quedan registrados en cada muestra (error<>0); certificar.mjs los evalua.
+  Receive-Job $renObserver -ErrorAction SilentlyContinue | Out-Null
+  $renAfter=& $renPy (Join-Path $PSScriptRoot 'snapshot-pg.py')
   if($LASTEXITCODE -ne 0) { throw 'No se pudo consultar PostgreSQL al finalizar.' }
   $renAfter | Set-Content -LiteralPath (Join-Path $renOutput 'postgres-despues.json') -Encoding UTF8
   $renRun=Get-Content -LiteralPath (Join-Path $renOutput 'resultado-objetivo.json') -Raw | ConvertFrom-Json
   if($renLoadExit -ne 0 -or -not $renRun.ventana.inicioIso -or -not $renRun.ventana.finIso) { throw 'La carga no se completo. Se conservaron los resultados parciales.' }
-  Write-Output 'Carga terminada. Esperando 60 s para publicacion de metricas Azure Monitor.'
-  Start-Sleep -Seconds 60
+  Write-Output 'Carga terminada. Esperando 150 s para publicacion de metricas Azure Monitor (incluye el ultimo minuto parcial).'
+  Start-Sleep -Seconds 150
   & (Join-Path $PSScriptRoot 'RECABAR-CPU.ps1') -Inicio $renRun.ventana.inicioIso -Fin $renRun.ventana.finIso -Az $Az -Destino $renOutput
   & node (Join-Path $PSScriptRoot 'certificar.mjs') $renOutput
   if($LASTEXITCODE -ne 0) { throw 'REN-01 no cumple o falta evidencia. Consultar INFORME.md de la corrida.' }

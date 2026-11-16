@@ -41,7 +41,12 @@ foreach ($renApp in @('auction-service','realtime-gateway')) {
   # GET directo: evita la ruta az monitor metrics list que sigue produciendo
   # revisionname/podname en este entorno. No desactivar ValidateDimensions.
   $renFilter = "revisionName eq '*' and podName eq '*'"
-  $renSpan = $Inicio.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') + '/' + $Fin.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+  # Azure agrupa PT1M desde el segundo exacto del inicio: se alinea a minutos completos para que cada punto sea un
+  # minuto de reloj y el ultimo minuto parcial de la ventana tambien tenga su punto.
+  $renIni = $Inicio.ToUniversalTime(); $renIni = $renIni.AddSeconds(-$renIni.Second).AddMilliseconds(-$renIni.Millisecond)
+  $renFinU = $Fin.ToUniversalTime(); $renFinA = $renFinU.AddSeconds(-$renFinU.Second).AddMilliseconds(-$renFinU.Millisecond)
+  if ($renFinA -lt $renFinU) { $renFinA = $renFinA.AddMinutes(1) }
+  $renSpan = $renIni.ToString('yyyy-MM-ddTHH:mm:ssZ') + '/' + $renFinA.ToString('yyyy-MM-ddTHH:mm:ssZ')
   $renQuery = [ordered]@{
     'api-version'='2023-10-01'
     'metricnamespace'='Microsoft.App/containerapps'
@@ -64,6 +69,16 @@ foreach ($renApp in @('auction-service','realtime-gateway')) {
   $renParsed = ($renMetrics -join "`n") | ConvertFrom-Json
   if (-not $renParsed.value -or -not (@($renParsed.value | Where-Object { $_.name.value -eq 'UsageNanoCores' }).Count)) {
     throw "Respuesta CPU sin UsageNanoCores para $renApp. No se reemplaza evidencia anterior."
+  }
+  $renSeries = @($renParsed.value | ForEach-Object { $_.timeseries } | Where-Object { $_ })
+  if ($renSeries.Count -eq 0) {
+    # Este ambiente no publica la dimension por replica: se pide la serie total (Maximum = maximo entre replicas).
+    $renQuery.Remove('$filter'); $renQuery.Remove('ValidateDimensions')
+    $renQueryText = ($renQuery.GetEnumerator() | ForEach-Object { [Uri]::EscapeDataString([string]$_.Key) + '=' + [Uri]::EscapeDataString([string]$_.Value) }) -join '&'
+    $renUrl = 'https://management.azure.com' + $renConfig.id + '/providers/Microsoft.Insights/metrics?' + $renQueryText
+    $renUrl | Add-Content -LiteralPath (Join-Path $Destino "cpu-consulta-$renApp.txt") -Encoding UTF8
+    $renMetrics = Invoke-RenAzure @('rest','--subscription',$renSubscription,'--method','get','--url',$renUrl,'--only-show-errors','-o','json')
+    if ($renAzureExit -ne 0) { throw "No se pudo consultar la CPU total de $renApp" }
   }
   $renMetrics | Set-Content -LiteralPath (Join-Path $Destino "cpu-$renApp.json") -Encoding UTF8
 }

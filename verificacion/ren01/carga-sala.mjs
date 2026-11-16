@@ -11,7 +11,7 @@ import { performance } from 'perf_hooks';
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    subastaId: '79ff79c1-195f-4864-8f32-165e701ba84c',
+    subastaId: process.env.REN01_SUBASTA || '79ff79c1-195f-4864-8f32-165e701ba84c',
     usuarios: 200,
     tasa: 20, // pujas por segundo
     duracion: 600, // segundos
@@ -396,6 +396,9 @@ async function faseCarga() {
     const programado = tInicioFormal + k * intervaloMs;
     const espera = programado - performance.now();
     if (espera > 0) await new Promise(r => setTimeout(r, espera));
+    // setTimeout puede despertar hasta ~1 ms antes: sin esto una puja programada al inicio de un bloque de 10 s
+    // se contaba en el bloque anterior (199/201) aunque la carga fuera exacta.
+    while (performance.now() < programado) { /* espera activa de menos de 1 ms */ }
     const retraso = performance.now() - programado;
     metricas.generador.retrasoMaximoMs = Math.max(metricas.generador.retrasoMaximoMs, retraso);
     if (retraso > intervaloMs) metricas.generador.enviosConRetrasoMayorAIntervalo++;
@@ -453,6 +456,7 @@ async function faseCarga() {
   // La ventana dura lo programado: el último envío sale en (N-1)*intervalo y se espera su intervalo completo.
   const finProgramado = tInicioFormal + totalEnvios * intervaloMs;
   if (finProgramado > performance.now()) await new Promise(r => setTimeout(r, finProgramado - performance.now()));
+  while (performance.now() < finProgramado) { /* setTimeout puede despertar ~1 ms antes: la ventana dura sus 600 s completos */ }
   metricas.ventana.finIso = new Date().toISOString();
   metricas.ventana.duracionRealMs = performance.now() - tInicioFormal;
 
