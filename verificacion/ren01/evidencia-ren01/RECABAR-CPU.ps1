@@ -41,7 +41,12 @@ foreach ($renApp in @('auction-service','realtime-gateway')) {
   # GET directo: evita la ruta az monitor metrics list que sigue produciendo
   # revisionname/podname en este entorno. No desactivar ValidateDimensions.
   $renFilter = "revisionName eq '*' and podName eq '*'"
-  $renSpan = $Inicio.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') + '/' + $Fin.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+  # Azure agrupa PT1M desde el segundo exacto del inicio: se alinea a minutos completos para que cada punto sea un
+  # minuto de reloj y el ultimo minuto parcial de la ventana tambien tenga su punto.
+  $renIni = $Inicio.ToUniversalTime(); $renIni = $renIni.AddSeconds(-$renIni.Second).AddMilliseconds(-$renIni.Millisecond)
+  $renFinU = $Fin.ToUniversalTime(); $renFinA = $renFinU.AddSeconds(-$renFinU.Second).AddMilliseconds(-$renFinU.Millisecond)
+  if ($renFinA -lt $renFinU) { $renFinA = $renFinA.AddMinutes(1) }
+  $renSpan = $renIni.ToString('yyyy-MM-ddTHH:mm:ssZ') + '/' + $renFinA.ToString('yyyy-MM-ddTHH:mm:ssZ')
   $renQuery = [ordered]@{
     'api-version'='2023-10-01'
     'metricnamespace'='Microsoft.App/containerapps'
