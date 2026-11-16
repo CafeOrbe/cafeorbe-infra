@@ -2,7 +2,7 @@
 
 | Archivo | Tablero | Contenido |
 |---|---|---|
-| `tablero-negocio.json` | CaféOrbe · Negocio | Pujas aceptadas y rechazadas por minuto y por motivo, conexiones WebSocket (total y por réplica), logins con Google, eventos pendientes en la outbox |
+| `tablero-negocio.json` | CaféOrbe · Negocio | Pujas aceptadas y rechazadas por minuto y por motivo, conexiones WebSocket (total y por réplica), logins con Google, eventos pendientes en la outbox, subastas creadas, iniciadas y cerradas (con ganador o desiertas) y Orbes gastados |
 | `tablero-tecnico.json` | CaféOrbe · Técnico y seguridad | SEG-01 a SEG-03 (login p95, verificación bajo 5 ms, infracciones, bloqueos, rechazos 401/403), REN-01 (p95/p99 de reenvío y registro de pujas, % de 5xx, outbox) y DIS-01 (réplicas activas y reparto por réplica) |
 
 Los dos se refrescan cada 5 s y usan la fuente de datos como variable (`${DS_PROM}`), así que no dependen de
