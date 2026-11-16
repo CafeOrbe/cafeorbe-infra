@@ -31,9 +31,25 @@ Corrida medida completa (2b2b381c):
 
 Los reintentos siguen una distribución geométrica con p ≈ 0.5: la mitad de los clientes se reconecta al instante y el resto vuelve a caer en la réplica que se está reiniciando, intento tras intento (cada intento espera 8 s). Es decir, **el ingreso de Container Apps sigue repartiendo ≈ 50 % del tráfico a la réplica caída mientras su contenedor reinicia** (≈ 60 a 110 s), aunque tiene sondas Startup, Liveness y Readiness configuradas (periodo 5 s, umbral 3).
 
-## Mejoras propuestas (no aplicadas)
+## Mejoras propuestas
 
 1. Cliente web: tiempo de espera de conexión WebSocket corto (2 s) y reintento inmediato con un poco de aleatoriedad; con p ≈ 0.5 la reconexión esperada baja a pocos segundos.
 2. api-gateway: reintento a otra réplica en GET idempotentes (`Retry` de Spring Cloud Gateway con tiempo de espera corto) para que la sonda REST no vea tiempos agotados.
 3. Readiness más agresiva (periodo 2 s, umbral 1) y medir de nuevo si el ingreso la respeta en reinicios dentro de la misma réplica.
 4. Más CPU por réplica para acortar el arranque de la JVM.
+
+## Estado de las mejoras (16 nov 2026, después de esta corrida)
+
+| Mejora | Estado |
+|---|---|
+| 1. Cliente web: conexión descartada a 1,5 s, 3 reintentos a 200 ms | Integrada (cafeorbe-web#6) |
+| 2. api-gateway: GET con límite de 1200 ms y 4 reintentos ante 502/503/504 | Integrada (cafeorbe-api-gateway#9) |
+| 3. Readiness cada 2 s, 2 fallos | Integrada (#9). Se aplica con el workflow "DIS-01 · disponibilidad en Azure" |
+| 4. Más CPU por réplica | Pendiente: solo si la nueva corrida no cumple |
+
+Ajustes a `caos-bajo-carga.mjs` para la nueva corrida:
+
+- Los compradores simulados se reconectan con la misma política que el cliente web (antes esperaban 8 s por intento), así que el tiempo medido es el que vería un comprador real.
+- La sonda REST espera hasta 10 s (antes 5 s) para que el resultado refleje la respuesta del gateway con sus reintentos; la latencia p95 y máxima de los 30 s tras la falla se reporta aparte.
+- La lectura final de pujas se reintenta hasta 6 veces, para que "0 pujas perdidas" no quede sin medir.
+- Además de las pujas guardadas sin aviso ("perdidas"), se cuentan las avisadas como aceptadas que no quedaron guardadas ("fantasma"); el criterio exige 0 de ambas. Las pujas enviadas sin ninguna respuesta se reportan solo como dato.
