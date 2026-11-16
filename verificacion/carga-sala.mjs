@@ -5,8 +5,9 @@
 //   COMPRADORES=300 PUJAS=40 node carga-sala.mjs
 //   API_URL=https://... WS_URL=wss://... COMPRADORES=100 node carga-sala.mjs
 //
-// REN-01 (carga sostenida): 200 compradores y hasta 20 pujas por segundo sobre el mismo precio durante 10 min.
-//   MODO=sostenida COMPRADORES=200 PUJAS_POR_SEG=20 SOSTENIDA_MIN=10 node carga-sala.mjs
+// REN-01 ya NO se mide con este script: su modo sostenido podía dar falsos aprobados (no exigía la carga completa
+// ni que cada puja aceptada llegara a todos los compradores). El generador oficial es ren01/carga-sala.mjs y el
+// dictamen lo da ren01/evidencia-ren01/certificar.mjs.
 // Las sesiones las firma sesiones-de-prueba.mjs: hacen falta JWT_SECRET y BROKER_* del ambiente (ver ese archivo).
 //
 // Crea usuarios y una subasta de prueba con un sufijo único; la subasta dura DURACION_MIN minutos y cierra sola.
@@ -109,6 +110,10 @@ function percentil(valores, p) {
 const ms = (v) => (v === null ? '—' : `${Math.round(v)} ms`)
 
 async function main() {
+  if (MODO === 'sostenida') {
+    console.error('MODO=sostenida está retirado: puede dar falsos aprobados de REN-01. Usa ren01/carga-sala.mjs y certifica con ren01/evidencia-ren01/certificar.mjs.')
+    process.exit(2)
+  }
   console.log(`Sala con ${COMPRADORES} compradores y ${PUJAS} pujas · ${API} · ${WS}\n`)
 
   // ── Preparación ────────────────────────────────────────────────────────
@@ -141,6 +146,7 @@ async function main() {
   console.log(`Conteo de conectados:    ${conteoCorrecto ? `todos ven ${entraron.length} tras ${((Date.now() - t) / 1000).toFixed(1)} s` : `NO converge (algunos ven ${[...new Set(entraron.map((s) => s.conectados))].join(', ')})`}`)
 
   if (MODO === 'sostenida') {
+    // Inalcanzable: main() rechaza MODO=sostenida antes de crear datos. Se conserva solo como referencia histórica.
     await http('POST', `/api/subastas/${subasta}/iniciar`, { token: luis.token })
     await esperar(1000)
     const aprobada = await cargaSostenida(entraron, salas)

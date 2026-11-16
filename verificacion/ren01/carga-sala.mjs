@@ -386,13 +386,19 @@ async function faseCarga() {
   let usuarioTurno = 0;
   let ultimoReporteLog = Date.now();
 
-  let proximoEnvio = tInicioFormal;
+  // Carga exacta: el envío k se programa en tInicio + k*intervalo (no "anterior + intervalo"). Así el retraso de un
+  // setTimeout no se acumula ni hace perder envíos: si uno sale tarde, el siguiente conserva su hora. Se cuentan
+  // los retrasos para que una máquina generadora saturada quede a la vista en lugar de esconderse en la media.
+  const totalEnvios = Math.round(opts.tasa * opts.duracion);
+  metricas.generador = { totalProgramados: totalEnvios, sinEmisor: 0, retrasoMaximoMs: 0, enviosConRetrasoMayorAIntervalo: 0 };
 
-  while (performance.now() < tFin) {
-    const espera = proximoEnvio - performance.now();
+  for (let k = 0; k < totalEnvios; k++) {
+    const programado = tInicioFormal + k * intervaloMs;
+    const espera = programado - performance.now();
     if (espera > 0) await new Promise(r => setTimeout(r, espera));
-    if (performance.now() >= tFin) break;
-    const tInicioCiclo = performance.now();
+    const retraso = performance.now() - programado;
+    metricas.generador.retrasoMaximoMs = Math.max(metricas.generador.retrasoMaximoMs, retraso);
+    if (retraso > intervaloMs) metricas.generador.enviosConRetrasoMayorAIntervalo++;
 
     // Encontrar un socket activo en round-robin
     let socketEmisor = null;
@@ -429,6 +435,9 @@ async function faseCarga() {
         metricas.pujas.erroresHttpOTransporte++;
         pujasEnVuelo.delete(clavePuja);
       }
+    } else {
+      // Ningún comprador disponible para este turno: la carga no fue completa y la corrida no puede aprobar.
+      metricas.generador.sinEmisor++;
     }
 
     // Reporte periódico en consola cada 30 segundos
@@ -440,10 +449,10 @@ async function faseCarga() {
       console.log(`  [Progreso] Faltan ${faltanSeg}s | Pujas env: ${metricas.pujas.enviadas} | Aceptadas: ${metricas.pujas.aceptadas} | p95: ${p95Parcial.toFixed(1)}ms | WS Activos: ${activas}`);
     }
 
-    // Esperar hasta el próximo tick manteniendo la tasa
-    // No compensar un atasco con una ráfaga: una tasa insuficiente debe quedar visible.
-    proximoEnvio = Math.max(proximoEnvio + intervaloMs, performance.now());
   }
+  // La ventana dura lo programado: el último envío sale en (N-1)*intervalo y se espera su intervalo completo.
+  const finProgramado = tInicioFormal + totalEnvios * intervaloMs;
+  if (finProgramado > performance.now()) await new Promise(r => setTimeout(r, finProgramado - performance.now()));
   metricas.ventana.finIso = new Date().toISOString();
   metricas.ventana.duracionRealMs = performance.now() - tInicioFormal;
 

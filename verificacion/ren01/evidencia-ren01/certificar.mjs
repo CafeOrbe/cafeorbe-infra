@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { analizar } from './analizar-carga.mjs';
+import { evaluarCpuReplica } from './analizar-cpu.mjs';
 const dir=resolve(process.argv[2] || '.');
 const read=name=>JSON.parse(readFileSync(join(dir,name),'utf8').replace(/^\uFEFF/,''));
 const lines=name=>readFileSync(join(dir,name),'utf8').split(/\r?\n/).map(l=>l.replace(/^\uFEFF/,'').trim()).filter(Boolean).map(l=>JSON.parse(l));
@@ -29,13 +30,10 @@ for(const app of ['auction-service','realtime-gateway']) {
   if(cpus.length!==1 || !Number.isFinite(cpus[0])) {add(`${app}: CPU por replica <80%`,null,'No se identifica vCPU de la revision');continue;}
   for(const replica of expected) {
     const matching=series.filter(s=>(s.metadatavalues||s.metadataValues||[]).some(v=>/pod|replica/i.test(v.name?.value || '') && v.value===replica));
-    const points=matching.flatMap(s=>s.data || []).filter(p=>Number.isFinite(p.maximum) && Date.parse(p.timeStamp)>=start-60000 && Date.parse(p.timeStamp)<=end);
-    const minutes=new Set(points.map(p=>Math.floor(Date.parse(p.timeStamp)/60000)));
-    const wanted=Array.from({length:10},(_,i)=>Math.floor(start/60000)+i);
-    const complete=wanted.every(t=>minutes.has(t));
-    const max=points.length?Math.max(...points.map(p=>p.maximum/(cpus[0]*1e9)*100)):null;
-    add(`${app}/${replica}: CPU <80%`,complete && max!==null?max<80:null,{maximoPorcentaje:max,muestras:points.length,coberturaCompleta:complete,vcpu:cpus[0]});
-    cpu.push({app,replica,points:points.map(p=>({timestamp:p.timeStamp,porcentaje:p.maximum/(cpus[0]*1e9)*100}))});
+    // Todos los minutos que se cruzan con la ventana, incluido el último parcial (ver analizar-cpu.mjs).
+    const r=evaluarCpuReplica(matching.flatMap(s=>s.data || []),start,end,cpus[0]);
+    add(`${app}/${replica}: CPU <80%`,r.cumple,{maximoPorcentaje:r.maximoPorcentaje,muestras:r.puntos.length,minutosEsperados:r.minutosEsperados,minutosFaltantes:r.minutosFaltantes,coberturaCompleta:r.coberturaCompleta,vcpu:cpus[0]});
+    cpu.push({app,replica,points:r.puntos});
   }
 }
 const dictamen=c.some(r=>r.cumple===false)?'NO CUMPLE':c.every(r=>r.cumple===true)?'CUMPLE':'NO CERTIFICADO';
