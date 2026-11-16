@@ -22,6 +22,8 @@ SCRIPTS="https://raw.githubusercontent.com/CafeOrbe/cafeorbe-infra/${RAMA}/verif
 
 command -v az >/dev/null || { echo "Falta Azure CLI (az): usa Azure Cloud Shell." >&2; exit 1; }
 az extension add --name containerapp --upgrade --only-show-errors >/dev/null
+# La extensión avisa en cada comando que cambió su comportamiento: se ocultan solo esos avisos.
+az() { command az "$@" --only-show-errors; }
 
 variable() { # variable <app> <NOMBRE>: valor de una variable de entorno del primer contenedor de la app
   az containerapp show -n "$1" -g "$GRUPO" --query "properties.template.containers[0].env[?name=='$2'].value | [0]" -o tsv
@@ -35,7 +37,8 @@ preparar() {
   fi
   : > "$ESTADO"
   for app in "${APPS[@]}"; do
-    az containerapp show -n "$app" -g "$GRUPO" --query "[name, properties.template.containers[0].resources.cpu, properties.template.containers[0].resources.memory, properties.template.scale.minReplicas, properties.template.scale.maxReplicas]" -o tsv >> "$ESTADO"
+    # Una línea por app: nombre, CPU, memoria, mínimo y máximo de réplicas (tsv de una lista da un valor por línea).
+    az containerapp show -n "$app" -g "$GRUPO" --query "[name, properties.template.containers[0].resources.cpu, properties.template.containers[0].resources.memory, properties.template.scale.minReplicas, properties.template.scale.maxReplicas]" -o tsv | paste -sd' ' >> "$ESTADO"
   done
   echo "Configuración actual guardada en $ESTADO:"
   column -t "$ESTADO"
@@ -43,15 +46,25 @@ preparar() {
     echo "→ $app: 1 vCPU / 2 GiB, 2 réplicas fijas"
     az containerapp update -n "$app" -g "$GRUPO" --cpu 1 --memory 2Gi --min-replicas 2 --max-replicas 2 -o none
   done
-  echo "Esperando a que las revisiones nuevas estén listas…"
+  # El ambiente express no informa revisiones: se confirma la CPU aplicada y que la app responda readiness.
+  echo "Esperando a que las apps respondan con la configuración nueva…"
+  local cpu fqdn listo
   for app in "${APPS[@]}"; do
+    listo=no
+    fqdn="$(url "$app")"
     for _ in $(seq 1 30); do
-      estado="$(az containerapp show -n "$app" -g "$GRUPO" --query "[properties.latestRevisionName, properties.latestReadyRevisionName]" -o tsv | tr '\t' ' ')"
-      read -r ultima lista <<< "$estado"
-      [[ "$ultima" == "$lista" ]] && break
+      cpu="$(az containerapp show -n "$app" -g "$GRUPO" --query "properties.template.containers[0].resources.cpu" -o tsv)"
+      if [[ "$cpu" == 1* ]] && curl -fsS -m 10 -o /dev/null "https://$fqdn/actuator/health/readiness"; then
+        listo=si
+        break
+      fi
       sleep 10
     done
-    echo "  $app: revisión lista $lista"
+    if [[ "$listo" == si ]]; then
+      echo "  $app: ${cpu} vCPU y readiness UP"
+    else
+      echo "  $app: no se pudo confirmar (CPU ${cpu:-?}); revísalo en el portal antes de correr" >&2
+    fi
   done
   echo "✓ Listo. Sigue con: $0 correr"
 }
@@ -89,10 +102,15 @@ restaurar() {
     echo "No hay configuración guardada ($ESTADO): no se cambia CPU ni réplicas." >&2
     exit 0
   fi
-  while read -r app cpu memoria minimo maximo; do
+  # Se leen los valores de a cinco (nombre, CPU, memoria, mínimo, máximo), sin importar si están en una o varias
+  # líneas: así también sirve el archivo de la primera versión del script, que guardaba un valor por línea.
+  local -a valores
+  read -r -d '' -a valores < "$ESTADO" || true
+  for ((i = 0; i + 4 < ${#valores[@]}; i += 5)); do
+    local app="${valores[i]}" cpu="${valores[i+1]}" memoria="${valores[i+2]}" minimo="${valores[i+3]}" maximo="${valores[i+4]}"
     echo "→ $app: ${cpu} vCPU / ${memoria}, réplicas ${minimo}–${maximo}"
     az containerapp update -n "$app" -g "$GRUPO" --cpu "$cpu" --memory "$memoria" --min-replicas "$minimo" --max-replicas "$maximo" -o none
-  done < "$ESTADO"
+  done
   rm -f "$ESTADO"
   echo "✓ Configuración restaurada."
 }
