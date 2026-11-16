@@ -16,8 +16,8 @@ def snapshot():
         if '--count-only' in sys.argv:
             conn.run('COMMIT')
             return {'observadoEn':str(observed), 'conexionesCliente':connections}
-        state = conn.run('SELECT estado, precio_actual, cantidad_pujas, hora_fin FROM subasta WHERE id=:id', id=uuid.UUID('79ff79c1-195f-4864-8f32-165e701ba84c'))[0]
-        rows = conn.run('SELECT id, monto, usuario_id, creada_en FROM puja WHERE subasta_id=:id ORDER BY monto, id', id=uuid.UUID('79ff79c1-195f-4864-8f32-165e701ba84c'))
+        state = conn.run('SELECT estado, precio_actual, cantidad_pujas, hora_fin FROM subasta WHERE id=:id', id=uuid.UUID(os.environ.get('REN01_SUBASTA', '79ff79c1-195f-4864-8f32-165e701ba84c')))[0]
+        rows = conn.run('SELECT id, monto, usuario_id, creada_en FROM puja WHERE subasta_id=:id ORDER BY monto, id', id=uuid.UUID(os.environ.get('REN01_SUBASTA', '79ff79c1-195f-4864-8f32-165e701ba84c')))
         conn.run('COMMIT')
         return {'observadoEn':str(observed), 'conexionesCliente':connections,
             'notaConexiones':'Incluye la conexion de este observador; cuenta sesiones activas e inactivas de todas las bases.',

@@ -11,7 +11,7 @@ import { performance } from 'perf_hooks';
 function parseArgs() {
   const args = process.argv.slice(2);
   const options = {
-    subastaId: '79ff79c1-195f-4864-8f32-165e701ba84c',
+    subastaId: process.env.REN01_SUBASTA || '79ff79c1-195f-4864-8f32-165e701ba84c',
     usuarios: 200,
     tasa: 20, // pujas por segundo
     duracion: 600, // segundos

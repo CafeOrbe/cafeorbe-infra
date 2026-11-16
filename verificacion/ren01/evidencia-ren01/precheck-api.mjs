@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 const api = 'https://api-gateway.blackbay-48700ead.eastus2.azurecontainerapps.io';
-const id = '79ff79c1-195f-4864-8f32-165e701ba84c';
+const id = process.env.REN01_SUBASTA || '79ff79c1-195f-4864-8f32-165e701ba84c';
 const result = { observadoEn: new Date().toISOString(), node: process.version, websocketDisponible: typeof WebSocket === 'function' };
 try {
   const users = JSON.parse(readFileSync(new URL('../compradores.json', import.meta.url), 'utf8')).slice(0, 200);
