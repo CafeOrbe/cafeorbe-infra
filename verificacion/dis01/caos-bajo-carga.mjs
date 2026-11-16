@@ -42,15 +42,27 @@ async function rest(ruta, token, tope = 10_000) {
   } catch (e) { return { t, ms: ahora() - t, status: 0, error: e.cause?.code || e.name } }
 }
 
-// DIS-01: misma política de reconexión que cafeorbe-web (src/shared/ws/salaSocket.ts). Si la conexión no abre en
-// 1,5 s se descarta; los 3 primeros reintentos esperan 200 ms y luego 1 s, 2 s, 4 s… hasta 10 s, con hasta 30 %
-// aleatorio. Con otra política el script mediría un cliente distinto del que usan los compradores.
+// DIS-01: misma política de reconexión que cafeorbe-web (src/shared/ws/salaSocket.ts). Con otra política el script
+// mediría un cliente distinto del que usan los compradores.
+//   - Límite para abrir: 3 veces lo que tardó la última conexión buena, entre 0,8 y 3 s (1,5 s antes de la primera).
+//   - Durante los primeros 10 s tras el corte se reintenta cada 200 ms; después 1 s, 2 s, 4 s… hasta 10 s.
+//   - Hasta 30 % aleatorio sobre cada espera.
 const ESPERA_CONEXION_MS = 1_500
-const REINTENTOS_RAPIDOS = 3
+const ESPERA_CONEXION_MIN_MS = 800
+const ESPERA_CONEXION_MAX_MS = 3_000
+const FACTOR_ESPERA_CONEXION = 3
+const VENTANA_RAPIDA_MS = 10_000
 const ESPERA_REINTENTO_RAPIDO_MS = 200
-function esperaReintento(intento) {
-  const base = intento < REINTENTOS_RAPIDOS ? ESPERA_REINTENTO_RAPIDO_MS : Math.min(1000 * 2 ** (intento - REINTENTOS_RAPIDOS), 10_000)
+function esperaReintento(estado) {
+  const t = ahora()
+  estado.desconectadoDesde ??= t
+  const base = t - estado.desconectadoDesde < VENTANA_RAPIDA_MS
+    ? ESPERA_REINTENTO_RAPIDO_MS
+    : Math.min(1000 * 2 ** estado.intentosLentos++, 10_000)
   return base + Math.floor(Math.random() * base * 0.3)
+}
+function esperaConexionTras(msHastaAbrir) {
+  return Math.min(ESPERA_CONEXION_MAX_MS, Math.max(ESPERA_CONEXION_MIN_MS, msHastaAbrir * FACTOR_ESPERA_CONEXION))
 }
 
 // ── Estado compartido ──────────────────────────────────────────────────────
@@ -67,19 +79,22 @@ async function ticket(token) {
 }
 
 function cliente(c) {
-  const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null, intentos: 0 }
+  const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null,
+    intentosLentos: 0, desconectadoDesde: null, esperaConexion: ESPERA_CONEXION_MS }
   const conectar = async () => {
     let primera = true
     while (!terminando) {
-      if (!primera) await esperar(esperaReintento(estado.intentos++))
+      if (!primera) await esperar(esperaReintento(estado))
       primera = false
       if (terminando) return
       let ws = null
       try {
-        ws = new WebSocket(`${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`)
+        const url = `${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`
+        const abriendoDesde = ahora()
+        ws = new WebSocket(url)
         await new Promise((ok, mal) => {
-          const limite = setTimeout(() => mal(new Error('timeout')), ESPERA_CONEXION_MS)
-          ws.onopen = () => { clearTimeout(limite); ok() }
+          const limite = setTimeout(() => mal(new Error('timeout')), estado.esperaConexion)
+          ws.onopen = () => { clearTimeout(limite); estado.esperaConexion = esperaConexionTras(ahora() - abriendoDesde); ok() }
           ws.onerror = (e) => { clearTimeout(limite); mal(e) }
           ws.onclose = () => { clearTimeout(limite); mal(new Error('cerrada')) }
         })
@@ -90,7 +105,8 @@ function cliente(c) {
         continue
       }
       ws.onerror = null
-      estado.intentos = 0
+      estado.intentosLentos = 0
+      estado.desconectadoDesde = null
       estado.ws = ws
       estado.abierto = true
       if (estado.cerradaEn) {

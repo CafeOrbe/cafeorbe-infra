@@ -53,3 +53,33 @@ Ajustes a `caos-bajo-carga.mjs` para la nueva corrida:
 - La sonda REST espera hasta 10 s (antes 5 s) para que el resultado refleje la respuesta del gateway con sus reintentos; la latencia p95 y máxima de los 30 s tras la falla se reporta aparte.
 - La lectura final de pujas se reintenta hasta 6 veces, para que "0 pujas perdidas" no quede sin medir.
 - Además de las pujas guardadas sin aviso ("perdidas"), se cuentan las avisadas como aceptadas que no quedaron guardadas ("fantasma"); el criterio exige 0 de ambas. Las pujas enviadas sin ninguna respuesta se reportan solo como dato.
+
+## Corrida con las mejoras 1–3 (subasta d265528b, falla 23:31:16 UTC)
+
+Antes de la corrida se ejecutó el workflow "DIS-01 · disponibilidad en Azure" (run 43979267313): aplicó 2–4 réplicas y las tres sondas en los tres servicios. Su paso de verificación falló porque consultó la readiness mientras auction y realtime reiniciaban; minutos después los tres respondían `{"status":"UP"}`.
+
+| Criterio | Meta | Resultado | |
+|---|---|---|---|
+| Errores REST en los 30 s tras la falla | < 2 % | 0 de 61 (0 %); p95 1414 ms; en toda la corrida 210 respuestas 200 y 1 504 | ✅ |
+| Pujas aceptadas perdidas / fantasma | 0 | 0 / 0 (599 enviadas, 155 aceptadas, 164 sin respuesta) | ✅ |
+| Réplicas repuestas | 2 por servicio | 23:33:05 (≈ 1 min 50 s) | ✅ |
+| Exactamente 1 cierre y 1 cobro | 1 y 1 | FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA | ✅ |
+| Reconexión WebSocket | < 10 s | 27 cortados (todos con 1006): 26 en menos de 7 s; 1 en 16,6 s | ❌ |
+
+Distribución de las 27 reconexiones: 14 en ≈ 0,4 s, 6 en ≈ 2,1 s, 3 en ≈ 3,8 s, 3 en ≈ 6,6 s y 1 en 16,6 s. Cada escalón de ≈ 1,7 s es un intento que quedó colgado hasta el límite de 1,5 s más la espera de 200 ms: la mitad de los intentos sigue cayendo en la réplica que reinicia. El de 16,6 s tuvo 5 intentos fallidos seguidos y, con la espera duplicándose desde el 4.º, esperó 4 s antes del intento bueno.
+
+### Mejora 5: ventana rápida de 10 s y límite de conexión adaptativo
+
+En `cafeorbe-web` (`salaSocket.ts`) y en `caos-bajo-carga.mjs`, con la misma política:
+
+- Durante los primeros 10 s tras el corte se reintenta cada 200 ms (+ hasta 30 % aleatorio), sin duplicar la espera. Pasada la ventana: 1 s, 2 s, 4 s, 8 s y 10 s.
+- El límite para abrir es 3 veces lo que tardó la última conexión buena, entre 0,8 y 3 s (1,5 s antes de la primera). Cerca del servidor un intento colgado cuesta ≈ 1 s; con una red lenta el límite sube y la conexión no se descarta antes de poder abrir.
+
+Simulación con la mitad de los intentos colgados y apertura en ≈ 0,2 s (lo medido en Cloud Shell), 200 000 reconexiones por política:
+
+| Política | p50 | p99 | Comprador con 10 s o más | Alguno de 27 con 10 s o más |
+|---|---|---|---|---|
+| Anterior (límite 1,5 s, 3 reintentos rápidos) | 2,1 s | 27,8 s | 6,13 % | 81,9 % |
+| Mejora 5 (ventana de 10 s, límite 0,8 s) | 0,5 s | 6,6 s | 0,09 % | 2,4 % |
+
+Para cerrar DIS-01: integrar los dos cambios, esperar el despliegue de web y repetir la corrida de caos (`preparar-ren01.mjs`, `caos-bajo-carga.mjs` y `verificar-cierre.sh`).
