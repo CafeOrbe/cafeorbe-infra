@@ -456,6 +456,7 @@ async function faseCarga() {
   // La ventana dura lo programado: el último envío sale en (N-1)*intervalo y se espera su intervalo completo.
   const finProgramado = tInicioFormal + totalEnvios * intervaloMs;
   if (finProgramado > performance.now()) await new Promise(r => setTimeout(r, finProgramado - performance.now()));
+  while (performance.now() < finProgramado) { /* setTimeout puede despertar ~1 ms antes: la ventana dura sus 600 s completos */ }
   metricas.ventana.finIso = new Date().toISOString();
   metricas.ventana.duracionRealMs = performance.now() - tInicioFormal;
 

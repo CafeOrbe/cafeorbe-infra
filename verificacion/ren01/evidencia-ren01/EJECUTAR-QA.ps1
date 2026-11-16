@@ -82,8 +82,8 @@ try {
   $renAfter | Set-Content -LiteralPath (Join-Path $renOutput 'postgres-despues.json') -Encoding UTF8
   $renRun=Get-Content -LiteralPath (Join-Path $renOutput 'resultado-objetivo.json') -Raw | ConvertFrom-Json
   if($renLoadExit -ne 0 -or -not $renRun.ventana.inicioIso -or -not $renRun.ventana.finIso) { throw 'La carga no se completo. Se conservaron los resultados parciales.' }
-  Write-Output 'Carga terminada. Esperando 60 s para publicacion de metricas Azure Monitor.'
-  Start-Sleep -Seconds 60
+  Write-Output 'Carga terminada. Esperando 150 s para publicacion de metricas Azure Monitor (incluye el ultimo minuto parcial).'
+  Start-Sleep -Seconds 150
   & (Join-Path $PSScriptRoot 'RECABAR-CPU.ps1') -Inicio $renRun.ventana.inicioIso -Fin $renRun.ventana.finIso -Az $Az -Destino $renOutput
   & node (Join-Path $PSScriptRoot 'certificar.mjs') $renOutput
   if($LASTEXITCODE -ne 0) { throw 'REN-01 no cumple o falta evidencia. Consultar INFORME.md de la corrida.' }
