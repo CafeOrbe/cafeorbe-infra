@@ -26,10 +26,12 @@ async function http(metodo, ruta, token, cuerpo) {
 
 console.log(`Registrando ${N} compradores de prueba (sufijo ${sufijo})...`)
 const compradores = []
-for (let i = 0; i < N; i += 20) {
-  const lote = await Promise.all(Array.from({ length: Math.min(20, N - i) }, (_, j) =>
+// De a 5 a la vez: la API HTTP del broker (CloudAMQP) se traba con muchas publicaciones simultáneas.
+for (let i = 0; i < N; i += 5) {
+  const lote = await Promise.all(Array.from({ length: Math.min(5, N - i) }, (_, j) =>
     sesionDePrueba(`ren01-${sufijo}-comprador-${String(i + j + 1).padStart(3, '0')}`, 'COMPRADOR')))
   compradores.push(...lote.map((s) => ({ id: s.usuario.id, nombre: s.usuario.nombre, token: s.token })))
+  if (compradores.length % 25 === 0) console.log(`  ${compradores.length}/${N} registrados`)
 }
 const subastador = await sesionDePrueba(`ren01-${sufijo}-subastador`, 'SUBASTADOR')
 
@@ -39,6 +41,7 @@ for (let intento = 0; ; intento++) {
   try {
     const saldo = await http('GET', '/api/orbes/saldo', ultimo.token)
     if (Number(saldo?.saldo) > 0) { console.log(`Orbes iniciales cargados (saldo ${saldo.saldo}).`); break }
+    if (intento % 5 === 0) console.log(`  Esperando los Orbes iniciales del último comprador (saldo ${saldo?.saldo})...`)
   } catch (e) { if (intento === 0) console.log(`Esperando a wallet: ${e.message}`) }
   if (intento > 30) throw new Error('wallet no cargó los Orbes iniciales en 60 s')
   await new Promise((r) => setTimeout(r, 2000))
