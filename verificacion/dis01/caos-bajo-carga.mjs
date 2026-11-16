@@ -20,6 +20,7 @@ const SUBASTA = process.env.REN01_SUBASTA
 const N = arg('--clientes', 60), PPS = arg('--pps', 5), ANTES = arg('--antes', 30), DESPUES = arg('--despues', 90)
 const SIN_CAOS = process.argv.includes('--sin-caos')
 process.on('SIGINT', () => process.exit(130))
+const MAX_REPOSICION = arg('--reposicion', 180)
 const GRUPO = process.env.RESOURCE_GROUP ?? 'cafeorbe-org'
 if (!SUBASTA) throw new Error('Falta REN01_SUBASTA')
 
@@ -103,10 +104,12 @@ function replicas(app) {
 
 function matar({ app, rev, nombres, contenedor }) {
   const victima = nombres[0]
-  // Termina PID 1 y Azure repone la réplica; la desconexión de exec es lo esperado. `az containerapp exec` necesita
-  // una terminal (sin TTY no ejecuta nada), por eso va dentro de `script`; y --command se parte por espacios, así
-  // que no admite comillas: se usa `kill -9 1` directo (la imagen trae /bin/kill).
-  const cmd = `timeout 25s az containerapp exec -g ${GRUPO} -n ${app} --revision ${rev} --replica ${victima} --container ${contenedor} --command "kill -9 1"`
+  // Detiene el proceso del servicio (PID 1) y Azure repone la réplica. Detalles que hacían que no pasara nada:
+  //  - el kernel ignora SIGKILL enviado a PID 1 desde su propio espacio de procesos: `kill -9 1` no hace nada;
+  //    la JVM sí atiende SIGTERM y termina, así que se usa `kill -TERM 1` (detención de la réplica);
+  //  - `az containerapp exec` necesita una terminal: va dentro de `script`;
+  //  - --command se parte por espacios: no admite comillas ni `sh -c '...'`.
+  const cmd = `timeout 25s az containerapp exec -g ${GRUPO} -n ${app} --revision ${rev} --replica ${victima} --container ${contenedor} --command "kill -TERM 1"`
   const p = spawn('script', ['-qec', cmd, '/dev/null'], { stdio: ['pipe', 'pipe', 'pipe'] })
   let salida = ''
   p.stdout.on('data', (d) => { salida += d })
@@ -168,7 +171,7 @@ const maxReconexion = reconexiones.reduce((m, r) => Math.max(m, r.ms), 0)
 
 let reposicion = null
 if (antesDeCaos) {
-  for (let i = 0; i < 36 && !reposicion; i++) {
+  for (let i = 0; i < MAX_REPOSICION / 5 && !reposicion; i++) {
     const actuales = { auction: replicas('auction-service'), realtime: replicas('realtime-gateway') }
     const listas = Object.values(actuales).every((r) => r.nombres.length >= 2 && !r.nombres.includes(victimas.find((v) => v.app === r.app).victima))
     if (listas) reposicion = { observadaEn: iso(ahora()), replicas: Object.fromEntries(Object.entries(actuales).map(([k, r]) => [k, r.nombres])) }
