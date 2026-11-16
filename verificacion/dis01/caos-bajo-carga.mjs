@@ -1,10 +1,11 @@
 // DIS-01 + OBS-01: caída de réplicas BAJO CARGA, medida desde el lado del cliente.
 //
-// Con N compradores conectados por WebSocket (que se reconectan solos, como el navegador) y pujas sostenidas,
-// termina el proceso de 1 réplica de auction-service y 1 de realtime-gateway y mide:
-//   - % de errores REST en los 30 s posteriores a la falla (meta < 2 %),
+// Con N compradores conectados por WebSocket (que se reconectan con la MISMA política que el cliente web) y pujas
+// sostenidas, termina el proceso de 1 réplica de auction-service y 1 de realtime-gateway y mide:
+//   - % de errores REST en los 30 s posteriores a la falla (meta < 2 %), con la latencia de esas consultas,
 //   - tiempo de reconexión de cada WebSocket cortado (meta < 10 s),
-//   - pujas aceptadas perdidas: cada número de puja (cantidadPujas) debe haberlo visto algún comprador (meta 0),
+//   - pujas aceptadas perdidas (meta 0): cada puja que quedó guardada (cantidadPujas final) debe haberse
+//     notificado a la sala, y ninguna puja notificada como aceptada puede faltar en lo guardado,
 //   - hora exacta de la falla, para medir en Grafana la degradación (≤ 30 s) y la alerta (≤ 2 min).
 // Un cierre y un cobro por subasta se comprueban después con verificar-cierre.py, cuando la subasta termina.
 //
@@ -30,13 +31,26 @@ const iso = (t) => new Date(t).toISOString()
 const horaMx = (t) => new Date(t).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City' })
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms))
 
-async function rest(ruta, token) {
+// Como el navegador, la consulta espera la respuesta del gateway (que ya corta y reintenta los GET a ~1,2 s por
+// intento); 10 s es solo un tope para no quedarse colgado. La latencia se reporta aparte.
+async function rest(ruta, token, tope = 10_000) {
   const t = ahora()
   try {
-    const r = await fetch(API + ruta, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) })
+    const r = await fetch(API + ruta, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(tope) })
     const cuerpo = r.ok ? await r.json() : null
-    return { t, status: r.status, cuerpo }
-  } catch (e) { return { t, status: 0, error: e.cause?.code || e.name } }
+    return { t, ms: ahora() - t, status: r.status, cuerpo }
+  } catch (e) { return { t, ms: ahora() - t, status: 0, error: e.cause?.code || e.name } }
+}
+
+// DIS-01: misma política de reconexión que cafeorbe-web (src/shared/ws/salaSocket.ts). Si la conexión no abre en
+// 1,5 s se descarta; los 3 primeros reintentos esperan 200 ms y luego 1 s, 2 s, 4 s… hasta 10 s, con hasta 30 %
+// aleatorio. Con otra política el script mediría un cliente distinto del que usan los compradores.
+const ESPERA_CONEXION_MS = 1_500
+const REINTENTOS_RAPIDOS = 3
+const ESPERA_REINTENTO_RAPIDO_MS = 200
+function esperaReintento(intento) {
+  const base = intento < REINTENTOS_RAPIDOS ? ESPERA_REINTENTO_RAPIDO_MS : Math.min(1000 * 2 ** (intento - REINTENTOS_RAPIDOS), 10_000)
+  return base + Math.floor(Math.random() * base * 0.3)
 }
 
 // ── Estado compartido ──────────────────────────────────────────────────────
@@ -53,38 +67,52 @@ async function ticket(token) {
 }
 
 function cliente(c) {
-  const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null }
+  const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null, intentos: 0 }
   const conectar = async () => {
+    let primera = true
     while (!terminando) {
+      if (!primera) await esperar(esperaReintento(estado.intentos++))
+      primera = false
+      if (terminando) return
+      let ws = null
       try {
-        const ws = new WebSocket(`${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`)
-        await new Promise((ok, mal) => { ws.onopen = ok; ws.onerror = mal; setTimeout(() => mal(new Error('timeout')), 8000) })
-        estado.ws = ws
-        estado.abierto = true
-        if (estado.cerradaEn) {
-          const abiertaEn = ahora()
-          reconexiones.push({ usuario: c.id, cerradaEn: iso(estado.cerradaEn), abiertaEn: iso(abiertaEn), ms: abiertaEn - estado.cerradaEn, codigo: estado.codigo })
-          estado.cerradaEn = null
-        }
-        ws.onmessage = (m) => {
-          let msg
-          try { msg = JSON.parse(m.data) } catch { return }
-          if (msg.tipo === 'PUJA_ACEPTADA') {
-            vistas.add(Number(msg.datos.cantidadPujas))
-            siguienteMinimo = Math.max(siguienteMinimo ?? 0, Number(msg.datos.siguienteMinimo))
-          } else if (msg.tipo === 'PUJA_RECHAZADA') {
-            if (msg.datos?.usuarioId === c.id) rechazadas++
-            if (msg.datos?.siguienteMinimo) siguienteMinimo = Math.max(siguienteMinimo ?? 0, Number(msg.datos.siguienteMinimo))
-          } else if (msg.tipo === 'ERROR') errores.mensajesError++
-        }
-        await new Promise((fin) => { ws.onclose = (e) => { estado.codigo = e.code; fin() } })
-        estado.abierto = false
-        if (terminando) return
-        estado.cerradaEn = ahora()      // corte inesperado: se reconecta como el navegador
+        ws = new WebSocket(`${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`)
+        await new Promise((ok, mal) => {
+          const limite = setTimeout(() => mal(new Error('timeout')), ESPERA_CONEXION_MS)
+          ws.onopen = () => { clearTimeout(limite); ok() }
+          ws.onerror = (e) => { clearTimeout(limite); mal(e) }
+          ws.onclose = () => { clearTimeout(limite); mal(new Error('cerrada')) }
+        })
       } catch {
         errores.ws++
-        await esperar(500)
+        // La conexión que no abrió a tiempo se descarta (como en la web) para que no se abra después por su cuenta.
+        if (ws) { ws.onopen = ws.onerror = ws.onclose = null; try { ws.close() } catch { /* ya cerrada */ } }
+        continue
       }
+      ws.onerror = null
+      estado.intentos = 0
+      estado.ws = ws
+      estado.abierto = true
+      if (estado.cerradaEn) {
+        const abiertaEn = ahora()
+        reconexiones.push({ usuario: c.id, cerradaEn: iso(estado.cerradaEn), abiertaEn: iso(abiertaEn), ms: abiertaEn - estado.cerradaEn, codigo: estado.codigo })
+        estado.cerradaEn = null
+      }
+      ws.onmessage = (m) => {
+        let msg
+        try { msg = JSON.parse(m.data) } catch { return }
+        if (msg.tipo === 'PUJA_ACEPTADA') {
+          vistas.add(Number(msg.datos.cantidadPujas))
+          siguienteMinimo = Math.max(siguienteMinimo ?? 0, Number(msg.datos.siguienteMinimo))
+        } else if (msg.tipo === 'PUJA_RECHAZADA') {
+          if (msg.datos?.usuarioId === c.id) rechazadas++
+          if (msg.datos?.siguienteMinimo) siguienteMinimo = Math.max(siguienteMinimo ?? 0, Number(msg.datos.siguienteMinimo))
+        } else if (msg.tipo === 'ERROR') errores.mensajesError++
+      }
+      await new Promise((fin) => { ws.onclose = (e) => { estado.codigo = e.code; fin() } })
+      estado.abierto = false
+      if (terminando) return
+      estado.cerradaEn = ahora()      // corte inesperado: se reconecta como el navegador
     }
   }
   estado.listo = conectar()
@@ -164,12 +192,22 @@ await esperar(5000)                      // eventos en vuelo
 terminando = true
 for (const s of clientes) try { s.ws?.close() } catch { /* ya cerrado */ }
 
-const final = await rest(`/api/subastas/${SUBASTA}`, compradores[0].token)
-const finalPujas = final.cuerpo?.cantidadPujas ?? null
+// Lectura final de lo guardado: se reintenta (la réplica caída puede seguir reiniciando) para que el criterio de
+// pujas perdidas no quede "no medible" por una sola consulta lenta, como pasó en la corrida del 16 nov.
+let final = null
+for (let i = 0; i < 6 && final?.status !== 200; i++) {
+  if (i) await esperar(5000)
+  final = await rest(`/api/subastas/${SUBASTA}`, compradores[0].token, 15_000)
+}
+const finalPujas = final?.status === 200 ? final.cuerpo.cantidadPujas : null
+// Perdida: quedó guardada y ningún comprador recibió su aviso. Fantasma: se avisó como aceptada y no quedó guardada.
 const perdidas = []
 for (let n = base + 1; n <= (finalPujas ?? base); n++) if (!vistas.has(n)) perdidas.push(n)
+const fantasmas = finalPujas == null ? [] : [...vistas].filter((n) => n > finalPujas).sort((a, b) => a - b)
 const ventana30 = sondas.filter((s) => s.t >= falla && s.t < falla + 30000)
 const err30 = ventana30.filter((s) => s.status !== 200).length
+const latencias30 = ventana30.map((s) => s.ms).sort((a, b) => a - b)
+const p95_30 = latencias30.length ? latencias30[Math.ceil(0.95 * latencias30.length) - 1] : null
 const errTotal = sondas.filter((s) => s.status !== 200).length
 const maxReconexion = reconexiones.reduce((m, r) => Math.max(m, r.ms), 0)
 
@@ -193,10 +231,13 @@ if (antesDeCaos) {
 const resultado = {
   subasta: SUBASTA, inicio: iso(inicio), falla: antesDeCaos ? iso(falla) : null, victimas,
   clientes: N, pujasPorSegundo: PPS, enviadas, rechazadasPropias: rechazadas,
-  pujasAceptadas: finalPujas == null ? null : finalPujas - base, pujasAceptadasPerdidas: perdidas,
+  pujasAceptadas: finalPujas == null ? null : finalPujas - base, pujasAceptadasPerdidas: perdidas, pujasFantasma: fantasmas,
+  // Informativo: pujas enviadas sin aviso de aceptada ni de rechazo (salieron por un socket que se estaba cerrando).
+  pujasSinRespuesta: finalPujas == null ? null : Math.max(0, enviadas - (finalPujas - base) - rechazadas),
   rest: {
     muestras: sondas.length, errores: errTotal,
-    en30sTrasFalla: { muestras: ventana30.length, errores: err30, porcentaje: ventana30.length ? +(100 * err30 / ventana30.length).toFixed(2) : null },
+    en30sTrasFalla: { muestras: ventana30.length, errores: err30, porcentaje: ventana30.length ? +(100 * err30 / ventana30.length).toFixed(2) : null,
+      latenciaP95Ms: p95_30, latenciaMaximaMs: latencias30.at(-1) ?? null },
     codigos: Object.fromEntries([...new Set(sondas.map((s) => s.status))].map((c) => [c, sondas.filter((s) => s.status === c).length])),
   },
   websocket: { cortados: reconexiones.length, reconexionMaximaMs: maxReconexion, reconexiones, erroresDeConexion: errores.ws, mensajesError: errores.mensajesError },
@@ -205,16 +246,16 @@ const resultado = {
 const criterios = antesDeCaos ? [
   ['Errores REST en los 30 s tras la falla < 2 %', resultado.rest.en30sTrasFalla.porcentaje !== null && resultado.rest.en30sTrasFalla.porcentaje < 2],
   ['Reconexión WebSocket < 10 s', reconexiones.length > 0 && maxReconexion < 10000],
-  ['0 pujas aceptadas perdidas', finalPujas != null && perdidas.length === 0 && finalPujas > base],
+  ['0 pujas aceptadas perdidas', finalPujas != null && perdidas.length === 0 && fantasmas.length === 0 && finalPujas > base],
   ['Réplicas repuestas (2 por servicio, sin la caída)', !!reposicion],
 ] : []
 resultado.criterios = Object.fromEntries(criterios)
 const archivo = new URL(`./resultado-caos-${iso(inicio).replace(/[:.]/g, '')}.json`, import.meta.url)
 writeFileSync(archivo, JSON.stringify(resultado, null, 2))
 
-console.log(`\nREST: ${ventana30.length} consultas en los 30 s tras la falla, ${err30} con error (${resultado.rest.en30sTrasFalla.porcentaje} %) · códigos ${JSON.stringify(resultado.rest.codigos)}`)
+console.log(`\nREST: ${ventana30.length} consultas en los 30 s tras la falla, ${err30} con error (${resultado.rest.en30sTrasFalla.porcentaje} %), p95 ${p95_30} ms · códigos ${JSON.stringify(resultado.rest.codigos)}`)
 console.log(`WebSocket: ${reconexiones.length} cortados, reconexión máxima ${maxReconexion} ms`)
-console.log(`Pujas: ${enviadas} enviadas, ${resultado.pujasAceptadas} aceptadas, perdidas: ${perdidas.length}`)
+console.log(`Pujas: ${enviadas} enviadas, ${resultado.pujasAceptadas ?? 'lectura final fallida'} aceptadas, perdidas: ${perdidas.length}, fantasma: ${fantasmas.length}, sin respuesta: ${resultado.pujasSinRespuesta}`)
 console.log(`Reposición: ${reposicion ? reposicion.observadaEn : 'NO observada en 3 min'}`)
 for (const [c, ok] of criterios) console.log(`${ok ? '✅' : '❌'} ${c}`)
 console.log(`Resultado: ${archivo.pathname}`)
