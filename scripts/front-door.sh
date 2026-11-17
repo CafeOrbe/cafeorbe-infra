@@ -100,7 +100,14 @@ crear() {
   for par in "${PARES[@]}"; do clonar "${par%%:*}" "${par##*:}"; done
 
   echo "2/3 · Perfil y endpoint de Azure Front Door"
-  az provider register --namespace Microsoft.Cdn -o none
+  # Registrar el proveedor exige permisos sobre la suscripción; si ya está registrado no hace falta.
+  local registro
+  registro="$(az provider show --namespace Microsoft.Cdn --query registrationState -o tsv 2>/dev/null || echo desconocido)"
+  if [[ "$registro" != Registered ]]; then
+    echo "  El proveedor Microsoft.Cdn está en estado '$registro'. Debe registrarlo quien administre la suscripción:" >&2
+    echo "    az provider register --namespace Microsoft.Cdn   (o portal: Suscripción → Proveedores de recursos)" >&2
+    exit 1
+  fi
   if ! az afd profile show -g "$GRUPO" --profile-name "$PERFIL" -o none 2>/dev/null; then
     az afd profile create -g "$GRUPO" --profile-name "$PERFIL" --sku Standard_AzureFrontDoor -o none
   fi
