@@ -23,7 +23,7 @@
 10. [Riesgos de despliegue](#10-riesgos-de-despliegue)
 
 Escenarios de calidad del Sprint 3: [seguridad](docs/SEGURIDAD.md) (SEG-01 a SEG-03),
-[disponibilidad](docs/DIS-01.md), [tableros de Grafana](grafana/README.md) y
+[disponibilidad](docs/DIS-01.md), [balanceador de carga NGINX](docs/BALANCEADOR.md), [tableros de Grafana](grafana/README.md) y
 [scripts de verificación](verificacion/README.md).
 
 ---
