@@ -80,3 +80,22 @@ Para volver atrás: restaurar en Vercel las URL directas de api-gateway y realti
 - Los pipelines no conocen las instancias B: hay que ejecutar `sincronizar` después de cada despliegue.
 - Costo: el perfil Standard se cobra por hora más el tráfico; borrar con `./scripts/front-door.sh borrar` cuando
   no se use.
+
+## Resultado en QA (17 nov 2026): bloqueado por la suscripción
+
+`az afd profile create` respondió **`BadRequest: Free Trial and Student account is forbidden for Azure Frontdoor
+resources`**. La suscripción *Azure for Students* no permite Front Door, aunque el proveedor `Microsoft.Cdn` ya
+está registrado y la cuenta tiene permisos sobre el grupo de recursos. No se creó ningún recurso de Front Door.
+
+Alternativas evaluadas:
+
+- **Application Gateway v2**: lo permite la suscripción, pero el navegador entra por HTTPS (la web está en
+  Vercel) y Application Gateway necesita un certificado propio para su escucha HTTPS. Sin dominio propio, el
+  certificado sería autofirmado y el navegador rechazaría las peticiones. Además tarda 20–30 min y cuesta
+  ~US$6 por día.
+- **Azure Load Balancer y Traffic Manager**: no sirven para Container Apps (el primero balancea máquinas en una
+  red virtual; el segundo reparte por DNS y el certificado de cada app no coincide con su nombre).
+- **NGINX propio** (PR #20): desplegado y probado, retirado de QA por la caída de conexiones en REN-01.
+
+Queda como balanceador el **ingreso de Azure Container Apps** (Envoy administrado, configurado por el equipo:
+ingreso externo, sin afinidad, sondas de readiness cada 2 s y 4–6 réplicas).
