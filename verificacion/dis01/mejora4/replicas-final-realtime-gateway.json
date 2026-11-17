@@ -1,0 +1,24 @@
+[
+  {
+    "containers": [
+      {
+        "name": "realtime-gateway",
+        "ready": true,
+        "restarts": 3,
+        "state": "Running"
+      }
+    ],
+    "name": "realtime-gateway--latest-b72f1ae4-3d99-4557-aeb7-0b08000fb504"
+  },
+  {
+    "containers": [
+      {
+        "name": "realtime-gateway",
+        "ready": true,
+        "restarts": 0,
+        "state": "Running"
+      }
+    ],
+    "name": "realtime-gateway--latest-56dd74ca-1e69-4eb5-a352-b92fe2315c90"
+  }
+]

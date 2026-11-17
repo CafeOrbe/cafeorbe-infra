@@ -1,0 +1,17 @@
+DIS-01 · 60 compradores, 5 pujas/s, falla a los 30 s, observación 90 s después
+Conectados: 60/60
+💥 Falla a las 2026-11-17T02:34:00.337Z (8:34:00 p.m. hora de México): auction-service/auction-service--latest-40914a89-aff7-4d52-bba5-1d74f16acc6d, realtime-gateway/realtime-gateway--latest-b72f1ae4-3d99-4557-aeb7-0b08000fb504
+Medición lista (antes de esperar reposición): REST 30 s 2/46 con error · WS máx 12458 ms · pujas perdidas 0
+
+REST: 46 consultas en los 30 s tras la falla, 2 con error (4.35 %), p95 1518 ms · códigos {"200":257,"502":1,"504":1}
+WebSocket: 24 cortados, reconexión máxima 12458 ms
+Intentos fallidos: 25 · {"conexion · no abrió en 1500 ms":25}
+  12458 ms (corte 02:34:09.756): 09.992 conexion/no abrió en 1500 ms (1768 ms) → 11.972 conexion/no abrió en 1500 ms (1588 ms) → 13.798 conexion/no abrió en 1500 ms (1583 ms) → 15.594 conexion/no abrió en 1500 ms (1585 ms) → 17.403 conexion/no abrió en 1500 ms (1603 ms) → 19.211 conexion/no abrió en 1500 ms (1592 ms)
+  8041 ms (corte 02:34:09.776): 10.030 conexion/no abrió en 1500 ms (1777 ms) → 12.007 conexion/no abrió en 1500 ms (1581 ms) → 13.847 conexion/no abrió en 1500 ms (1586 ms) → 15.659 conexion/no abrió en 1500 ms (1596 ms)
+Pujas: 599 enviadas, 164 aceptadas, perdidas: 0, fantasma: 0, sin respuesta: 66
+Reposición: 2026-11-17T02:35:53.963Z
+❌ Errores REST en los 30 s tras la falla < 2 %
+❌ Reconexión WebSocket < 10 s
+✅ 0 pujas aceptadas perdidas
+✅ Réplicas repuestas (2 por servicio, sin la caída)
+Resultado: /home/juan/cafeorbe-infra/verificacion/dis01/resultado-caos-2026-11-17T023330337Z.json
