@@ -92,6 +92,28 @@ Imagen construida con Docker y ejecutada en local contra QA:
 En la prueba local A y B apuntaban al mismo servicio de QA; la prueba en Azure, con instancias separadas, se
 hace con `./scripts/balanceador.sh probar`.
 
+## Despliegue en QA (17 nov 2026)
+
+`./scripts/balanceador.sh crear` desde Azure Cloud Shell. Configuración resultante (`estado`):
+
+| App | Imagen | CPU por réplica | Réplicas |
+|---|---|---|---|
+| `cafeorbe-lb` | `cafeorbe-lb:20261117T115540Z` | 0,25 | 2–4 |
+| `api-gateway` (A) | `api-gateway:6f94fe1b` | 0,25 | 2–4 |
+| `api-gateway-b` (B) | `api-gateway:6f94fe1b` | 0,25 | 2–4 |
+| `realtime-gateway` (A) | `realtime-gateway:8872738c` | 0,5 | 4–6 |
+| `realtime-gateway-b` (B) | `realtime-gateway:8872738c` | 0,5 | 2–4 |
+
+URL del balanceador: `https://cafeorbe-lb.blackbay-48700ead.eastus2.azurecontainerapps.io`.
+A y B ejecutan la misma imagen.
+
+`./scripts/balanceador.sh probar`:
+
+| Prueba | Resultado |
+|---|---|
+| 40 lecturas a `/actuator/health/readiness` | 40/40 con 200: 16 `api-a` y 24 `api-b` (reparto aleatorio por petición; con 40 muestras la diferencia es normal) |
+| Handshake de WebSocket sin ticket | 400 del realtime-gateway (la ruta llega al servicio; no es un 5xx del balanceador) |
+
 ## Límites conocidos
 
 - NGINX de código abierto solo tiene salud pasiva: detecta una instancia caída por los fallos de las
