@@ -114,6 +114,22 @@ A y B ejecutan la misma imagen.
 | 40 lecturas a `/actuator/health/readiness` | 40/40 con 200: 16 `api-a` y 24 `api-b` (reparto aleatorio por petición; con 40 muestras la diferencia es normal) |
 | Handshake de WebSocket sin ticket | 400 del realtime-gateway (la ruta llega al servicio; no es un 5xx del balanceador) |
 
+### Carga de REN-01 a través del balanceador y retiro (17 nov 2026)
+
+Con la web apuntando al balanceador, una puja manual en dos pestañas se aceptó y el precio se actualizó en ambas.
+La carga de 200 WebSockets de REN-01 (`carga-sala.mjs`, subasta de 3 min) **no llegó a medir**: abrió 163 de
+200 conexiones. Las 75 primeras abrieron bien; entre la 75 y la 100 se perdieron 37 de golpe (5 abiertas se
+cortaron con 1006 y las nuevas de ese momento no abrieron), y de la 100 a la 200 abrieron todas. No hubo
+reinicios ni réplicas nuevas en `cafeorbe-lb`, `realtime-gateway` ni `realtime-gateway-b`.
+
+**Causa sin confirmar.** Hipótesis por revisar en Log Analytics (estado de `/ws/` por instancia y errores de
+NGINX entre 12:24 y 12:30 UTC): la conmutación de un handshake a la otra instancia reutiliza el ticket de un
+solo uso que la primera ya consumió.
+
+Por tiempo, antes de la presentación el equipo **retiró el balanceador**: se borraron `cafeorbe-lb`,
+`api-gateway-b` y `realtime-gateway-b`, y la web volvió a las URL directas (comprobado en el build publicado
+a las 12:38 UTC). Se vuelve a desplegar con `./scripts/balanceador.sh crear`.
+
 ## Límites conocidos
 
 - NGINX de código abierto solo tiene salud pasiva: detecta una instancia caída por los fallos de las
