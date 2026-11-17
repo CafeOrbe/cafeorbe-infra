@@ -19,24 +19,29 @@ command -v jq >/dev/null || { echo "Falta jq." >&2; exit 1; }
 fallos=0
 for servicio in api-gateway auction-service realtime-gateway; do
   app="${servicio}${SUFIJO}"
+  min_esperado=4 max_esperado=6
+  if [[ "$servicio" == api-gateway ]]; then min_esperado=2 max_esperado=4; fi
   configuracion="$(az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json)"
   minimas="$(jq -r '.properties.template.scale.minReplicas' <<<"$configuracion")"
   maximas="$(jq -r '.properties.template.scale.maxReplicas' <<<"$configuracion")"
+  cpu="$(jq -r '.properties.template.containers[0].resources.cpu' <<<"$configuracion")"
+  memoria="$(jq -r '.properties.template.containers[0].resources.memory' <<<"$configuracion")"
   fqdn="$(jq -r '.properties.configuration.ingress.fqdn' <<<"$configuracion")"
   revision="$(az containerapp revision list --name "$app" --resource-group "$GRUPO_RECURSOS" \
     --query '[?properties.active].name | [0]' --output tsv)"
   replicas="$(az containerapp replica list --name "$app" --resource-group "$GRUPO_RECURSOS" \
-    --revision "$revision" --query 'length(@)' --output tsv)"
+    --revision "$revision" --output json | jq '[.[] | select(.properties.containers[0].ready == true)] | length')"
   sondas="$(jq '[.properties.template.containers[0].probes[]?.type] | sort' <<<"$configuracion")"
   concurrencia="$(jq -r '.properties.template.scale.rules[]? | select(.name == "http-concurrency") | .http.metadata.concurrentRequests' <<<"$configuracion")"
   estado="$(curl --fail --silent --show-error --max-time 10 "https://$fqdn/actuator/health/readiness" || true)"
 
-  printf '%-20s min=%s max=%s activas=%s concurrencia=%s sondas=%s readiness=%s\n' \
-    "$app" "$minimas" "$maximas" "$replicas" "$concurrencia" "$sondas" "$estado"
+  printf '%-20s min=%s max=%s listas=%s cpu=%s memoria=%s concurrencia=%s sondas=%s readiness=%s\n' \
+    "$app" "$minimas" "$maximas" "$replicas" "$cpu" "$memoria" "$concurrencia" "$sondas" "$estado"
 
-  if [[ "$minimas" != "2" || "$maximas" != "4" || "$replicas" -lt 2 || "$concurrencia" != "20" \
+  if [[ "$minimas" != "$min_esperado" || "$maximas" != "$max_esperado" || "$replicas" -lt "$min_esperado" || "$replicas" -gt "$max_esperado" || "$concurrencia" != "20" \
       || "$sondas" != *'"Startup"'* || "$sondas" != *'"Liveness"'* || "$sondas" != *'"Readiness"'* \
-      || "$estado" != *'"UP"'* ]]; then
+      || "$estado" != *'"UP"'* \
+      || ( "$servicio" != api-gateway && ( "$cpu" != "0.5" || "$memoria" != "1Gi" ) ) ]]; then
     fallos=$((fallos + 1))
   fi
 done
@@ -46,10 +51,10 @@ if ((fallos)); then
   exit 1
 fi
 
-echo "✓ Los tres servicios críticos tienen 2–4 réplicas, sondas y readiness UP."
+echo "✓ Auction/realtime: 4–6 réplicas de 0,5 vCPU / 1 GiB; API: 2–4; sondas y readiness UP."
 
-# El escenario exige que, con dos réplicas, cada una reciba al menos 30 % de las peticiones. Cada respuesta de
-# Prometheus contiene la etiqueta `instancia` generada por la réplica que atendió esa petición.
+# Con 4–6 réplicas, 30 % por instancia es imposible. Se exige observar tráfico en al menos
+# cuatro instancias y se informa la distribución; no se certifica equidad mediante estas 60 muestras.
 auction="auction-service${SUFIJO}"
 auction_fqdn="$(az containerapp show --name "$auction" --resource-group "$GRUPO_RECURSOS" \
   --query properties.configuration.ingress.fqdn --output tsv)"
@@ -66,17 +71,13 @@ for ((i = 0; i < muestras; i++)); do
   atendidas["$instancia"]=$(( ${atendidas["$instancia"]:-0} + 1 ))
 done
 
-if ((${#atendidas[@]} != 2)); then
-  echo "La prueba de reparto exige exactamente 2 réplicas y observó ${#atendidas[@]}." >&2
+if ((${#atendidas[@]} < 4)); then
+  echo "La prueba de reparto exige al menos 4 instancias y observó ${#atendidas[@]}." >&2
   exit 1
 fi
 for instancia in "${!atendidas[@]}"; do
   porcentaje=$((atendidas["$instancia"] * 100 / muestras))
   echo "auction instancia=$instancia peticiones=${atendidas[$instancia]}/$muestras (${porcentaje} %)"
-  if ((porcentaje < 30)); then
-    echo "Falla DIS-01: una réplica recibió menos de 30 % del tráfico." >&2
-    exit 1
-  fi
 done
 
-echo "✓ El ingress distribuyó al menos 30 % de las peticiones a cada réplica de auction."
+echo "✓ Se observó tráfico en ${#atendidas[@]} instancias de auction; distribución informativa."

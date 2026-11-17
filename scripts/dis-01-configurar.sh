@@ -31,6 +31,7 @@ trap limpiar EXIT
 configurar() {
   local servicio="$1"
   local puerto="$2"
+  local minimas="$3" maximas="$4"
   local app="${servicio}${SUFIJO}"
   local actual actualizado
   actual="$(mktemp)"
@@ -38,16 +39,18 @@ configurar() {
   TEMPORALES+=("$actual" "$actualizado")
   chmod 600 "$actual" "$actualizado"
 
-  echo "→ $app: 2–4 réplicas y sondas HTTP en el puerto $puerto"
+  echo "→ $app: $minimas–$maximas réplicas y sondas HTTP en el puerto $puerto"
   az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json >"$actual"
 
-  # DIS-01: la readiness se revisa cada 2 s y saca la réplica del balanceo tras 2 fallos (≤ 4 s; antes 5 s × 3 = 15 s).
-  # Al apagarse, Spring marca readiness como REFUSING_TRAFFIC: cuanto antes lo note el ingress, menos peticiones caen
-  # en la réplica que se va. Se usan 2 fallos y no 1 para que un chequeo lento aislado bajo carga (0,25 vCPU) no saque
-  # del balanceo a una réplica sana.
-  jq --argjson puerto "$puerto" '
-    .properties.template.scale.minReplicas = 2
-    | .properties.template.scale.maxReplicas = 4
+  # Readiness cada 2 s y 2 fallos. En Express se observó tráfico hacia contenedores que
+  # reiniciaban pese a estas sondas; las cuatro réplicas base mantienen tres sanas durante la caída.
+  jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" '
+    .properties.template.scale.minReplicas = $minimas
+    | .properties.template.scale.maxReplicas = $maximas
+    | if $servicio == "auction-service" or $servicio == "realtime-gateway" then
+        .properties.template.containers[0].resources.cpu = 0.5
+        | .properties.template.containers[0].resources.memory = "1Gi"
+      else . end
     | .properties.template.scale.rules = [
         {
           "name": "http-concurrency",
@@ -92,8 +95,8 @@ configurar() {
     --only-show-errors >/dev/null
 }
 
-configurar api-gateway 8080
-configurar auction-service 8082
-configurar realtime-gateway 8085
+configurar api-gateway 8080 2 4
+configurar auction-service 8082 4 6
+configurar realtime-gateway 8085 4 6
 
 echo "✓ DIS-01 configurado en $AMBIENTE. Ejecuta scripts/dis-01-verificar.sh $AMBIENTE para reunir evidencia."
