@@ -68,19 +68,32 @@ function esperaConexionTras(msHastaAbrir) {
 // ── Estado compartido ──────────────────────────────────────────────────────
 let siguienteMinimo = null
 const vistas = new Set()            // números de puja aceptada vistos por algún comprador
-const reconexiones = []             // { usuario, cerradaEn, abiertaEn, ms, codigo }
+const reconexiones = []             // { usuario, cerradaEn, abiertaEn, ms, codigo, intentos: [...] }
+// DIS-01: cada intento fallido con su fase y motivo, para saber si una reconexión lenta se debe al ingreso (la
+// conexión no abre), al ticket (POST a identity) o a otra cosa. { usuario, en, fase, motivo, ms }
+const intentosFallidos = []
 const errores = { ws: 0, mensajesError: 0 }
 let enviadas = 0, rechazadas = 0, terminando = false
 
+/** Error del paso del ticket, con un motivo legible: "HTTP 503", "tiempo agotado (5 s)" o el código de red. */
+class FalloDeTicket extends Error {
+  constructor(motivo) { super(motivo); this.motivo = motivo }
+}
 async function ticket(token) {
-  const r = await fetch(API + '/api/sesion/ticket-ws', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) })
-  if (!r.ok) throw new Error('ticket HTTP ' + r.status)
+  let r
+  try {
+    r = await fetch(API + '/api/sesion/ticket-ws', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(5000) })
+  } catch (e) {
+    const codigo = e.cause?.code || e.cause?.errors?.[0]?.code || e.cause?.message || e.name
+    throw new FalloDeTicket(e.name === 'TimeoutError' ? 'tiempo agotado (5 s)' : `red: ${codigo}`)
+  }
+  if (!r.ok) throw new FalloDeTicket(`HTTP ${r.status}`)
   return (await r.json()).ticket
 }
 
 function cliente(c) {
   const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null,
-    intentosLentos: 0, desconectadoDesde: null, esperaConexion: ESPERA_CONEXION_MS }
+    intentosLentos: 0, desconectadoDesde: null, esperaConexion: ESPERA_CONEXION_MS, fallosDesdeCorte: [] }
   const conectar = async () => {
     let primera = true
     while (!terminando) {
@@ -88,18 +101,24 @@ function cliente(c) {
       primera = false
       if (terminando) return
       let ws = null
+      const intentoDesde = ahora()
+      let fase = 'ticket'
       try {
         const url = `${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`
+        fase = 'conexion'
         const abriendoDesde = ahora()
         ws = new WebSocket(url)
         await new Promise((ok, mal) => {
-          const limite = setTimeout(() => mal(new Error('timeout')), estado.esperaConexion)
+          const limite = setTimeout(() => mal(new Error(`no abrió en ${estado.esperaConexion} ms`)), estado.esperaConexion)
           ws.onopen = () => { clearTimeout(limite); estado.esperaConexion = esperaConexionTras(ahora() - abriendoDesde); ok() }
-          ws.onerror = (e) => { clearTimeout(limite); mal(e) }
-          ws.onclose = () => { clearTimeout(limite); mal(new Error('cerrada')) }
+          ws.onerror = () => { clearTimeout(limite); mal(new Error('error de conexión')) }
+          ws.onclose = (e) => { clearTimeout(limite); mal(new Error(`cerrada al abrir (${e?.code ?? '?'})`)) }
         })
-      } catch {
+      } catch (e) {
         errores.ws++
+        const fallo = { usuario: c.id, en: iso(intentoDesde), fase, motivo: e?.motivo ?? e?.message ?? String(e), ms: ahora() - intentoDesde }
+        intentosFallidos.push(fallo)
+        estado.fallosDesdeCorte.push({ en: fallo.en, fase: fallo.fase, motivo: fallo.motivo, ms: fallo.ms })
         // La conexión que no abrió a tiempo se descarta (como en la web) para que no se abra después por su cuenta.
         if (ws) { ws.onopen = ws.onerror = ws.onclose = null; try { ws.close() } catch { /* ya cerrada */ } }
         continue
@@ -111,9 +130,11 @@ function cliente(c) {
       estado.abierto = true
       if (estado.cerradaEn) {
         const abiertaEn = ahora()
-        reconexiones.push({ usuario: c.id, cerradaEn: iso(estado.cerradaEn), abiertaEn: iso(abiertaEn), ms: abiertaEn - estado.cerradaEn, codigo: estado.codigo })
+        reconexiones.push({ usuario: c.id, cerradaEn: iso(estado.cerradaEn), abiertaEn: iso(abiertaEn), ms: abiertaEn - estado.cerradaEn,
+          codigo: estado.codigo, intentos: estado.fallosDesdeCorte })
         estado.cerradaEn = null
       }
+      estado.fallosDesdeCorte = []
       ws.onmessage = (m) => {
         let msg
         try { msg = JSON.parse(m.data) } catch { return }
@@ -226,6 +247,12 @@ const latencias30 = ventana30.map((s) => s.ms).sort((a, b) => a - b)
 const p95_30 = latencias30.length ? latencias30[Math.ceil(0.95 * latencias30.length) - 1] : null
 const errTotal = sondas.filter((s) => s.status !== 200).length
 const maxReconexion = reconexiones.reduce((m, r) => Math.max(m, r.ms), 0)
+/** Cuenta los intentos fallidos por fase y motivo, p. ej. { "conexion · no abrió en 800 ms": 12, "ticket · HTTP 503": 3 }. */
+function porMotivo(fallos) {
+  const cuenta = {}
+  for (const f of fallos) cuenta[`${f.fase} · ${f.motivo}`] = (cuenta[`${f.fase} · ${f.motivo}`] ?? 0) + 1
+  return Object.fromEntries(Object.entries(cuenta).sort((a, b) => b[1] - a[1]))
+}
 
 console.log(`Medición lista (antes de esperar reposición): REST 30 s ${err30}/${ventana30.length} con error · WS máx ${maxReconexion} ms · pujas perdidas ${perdidas.length}`)
 let reposicion = null
@@ -256,7 +283,8 @@ const resultado = {
       latenciaP95Ms: p95_30, latenciaMaximaMs: latencias30.at(-1) ?? null },
     codigos: Object.fromEntries([...new Set(sondas.map((s) => s.status))].map((c) => [c, sondas.filter((s) => s.status === c).length])),
   },
-  websocket: { cortados: reconexiones.length, reconexionMaximaMs: maxReconexion, reconexiones, erroresDeConexion: errores.ws, mensajesError: errores.mensajesError },
+  websocket: { cortados: reconexiones.length, reconexionMaximaMs: maxReconexion, reconexiones, erroresDeConexion: errores.ws, mensajesError: errores.mensajesError,
+    fallosPorMotivo: porMotivo(intentosFallidos), intentosFallidos },
   reposicion,
 }
 const criterios = antesDeCaos ? [
@@ -271,6 +299,11 @@ writeFileSync(archivo, JSON.stringify(resultado, null, 2))
 
 console.log(`\nREST: ${ventana30.length} consultas en los 30 s tras la falla, ${err30} con error (${resultado.rest.en30sTrasFalla.porcentaje} %), p95 ${p95_30} ms · códigos ${JSON.stringify(resultado.rest.codigos)}`)
 console.log(`WebSocket: ${reconexiones.length} cortados, reconexión máxima ${maxReconexion} ms`)
+console.log(`Intentos fallidos: ${intentosFallidos.length} · ${JSON.stringify(resultado.websocket.fallosPorMotivo)}`)
+// Las reconexiones lentas, con cada intento: así se ve si fallaba la conexión (ingreso) o el ticket.
+for (const r of [...reconexiones].sort((a, b) => b.ms - a.ms).filter((r) => r.ms >= 5000)) {
+  console.log(`  ${r.ms} ms (corte ${r.cerradaEn.slice(11, 23)}): ` + r.intentos.map((i) => `${i.en.slice(17, 23)} ${i.fase}/${i.motivo} (${i.ms} ms)`).join(' → '))
+}
 console.log(`Pujas: ${enviadas} enviadas, ${resultado.pujasAceptadas ?? 'lectura final fallida'} aceptadas, perdidas: ${perdidas.length}, fantasma: ${fantasmas.length}, sin respuesta: ${resultado.pujasSinRespuesta}`)
 console.log(`Reposición: ${reposicion ? reposicion.observadaEn : 'NO observada en 3 min'}`)
 for (const [c, ok] of criterios) console.log(`${ok ? '✅' : '❌'} ${c}`)
