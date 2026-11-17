@@ -100,7 +100,7 @@ Prueba del **17 nov 2026 (UTC)**, desde Azure Cloud Shell (Bash), sobre QA (`caf
 
 Único ajuste de infraestructura para esta prueba: `bash scripts/ren-01-carga.sh preparar`. Ambas apps pasaron de **0,25 vCPU / 0,5 GiB, mínimo 2 y máximo 4 réplicas**, a **1 vCPU / 2 GiB y exactamente 2 réplicas**. Las dos confirmaron readiness UP antes de iniciar la carga. No se modificó código de servicios ni la política de reconexión de la web o del generador de carga. Los secretos se resolvieron dentro de Cloud Shell y no se incluyeron en la evidencia.
 
-La configuración anterior y la aplicada están en [`mejora4/`](mejora4/): `antes-{app}.json` y `despues-{app}.json`. **Por la última instrucción del operador, al terminar se mantiene 1 vCPU / 2 GiB y 2 réplicas fijas en ambas apps; no se ejecutó `restaurar`.** La configuración anterior también quedó guardada por el script en `~/.cafeorbe-ren01-estado` de esta sesión de Cloud Shell.
+La configuración anterior y la aplicada están en [`mejora4/`](mejora4/): `antes-{app}.json` y `despues-{app}.json`. **Por instrucción del operador, al terminar esta etapa se mantuvo 1 vCPU / 2 GiB y 2 réplicas fijas en ambas apps; no se ejecutó `restaurar`.** La configuración anterior también quedó guardada por el script en `~/.cafeorbe-ren01-estado` de esta sesión de Cloud Shell.
 
 ### Cómo interpretar la reposición
 
@@ -223,4 +223,136 @@ Con 1 vCPU, auction volvió a observarse lista entre **45.3 y 51.9 s** después 
 
 La comparación es contra las corridas históricas descritas arriba y la referencia de las 01:25 aportada para esta prueba (51,2 s de reconexión y 4,26 % REST); no se ejecutó un nuevo control con 0,25 vCPU. Esta prueba utiliza la política de reconexión de la mejora 6 ya presente en `3695513`, por lo que la diferencia de WebSocket frente a corridas con otra política no puede atribuirse exclusivamente a la CPU. La primera corrida quedó cerca del umbral REST (1,67 %) y la tercera incumplió ambos umbrales. Reducir el arranque no elimina los intentos colgados mientras el ingreso sigue enviando tráfico: el aumento de CPU, aun con una recuperación más rápida, resulta insuficiente en estas tres pruebas.
 
-**Estado final:** ambas apps permanecen en 1 vCPU / 2 GiB, mínimo y máximo 2 réplicas, por instrucción explícita del operador. Las comprobaciones finales de recursos y readiness se guardan en `mejora4/final-{app}.json` y `mejora4/readiness-final.json`.
+**Estado al finalizar esta etapa:** ambas apps quedaron en 1 vCPU / 2 GiB, mínimo y máximo 2 réplicas, por instrucción explícita del operador. Las comprobaciones finales de recursos y readiness se guardan en `mejora4/final-{app}.json` y `mejora4/readiness-final.json`.
+
+## Mejora 4b: cuatro réplicas de 0,5 vCPU / 1 GiB
+
+Continuación del **17 nov 2026 (UTC)**: se compara la etapa anterior de 2 réplicas de 1 vCPU / 2 GiB con **4 réplicas fijas de 0,5 vCPU / 1 GiB** en `auction-service` y `realtime-gateway`. El total asignado por servicio permanece en **2 vCPU y 4 GiB**. El objetivo es mantener tres réplicas sanas cuando se detiene una, en lugar de una sola.
+
+Se usó el mismo código de infra (`3695513`), las mismas sondas y la misma política de reconexión. No se modificaron servicios, web ni generador de carga. Los únicos cambios de configuración fueron:
+
+```bash
+az containerapp update -n auction-service -g cafeorbe-org --cpu 0.5 --memory 1Gi --min-replicas 4 --max-replicas 4
+az containerapp update -n realtime-gateway -g cafeorbe-org --cpu 0.5 --memory 1Gi --min-replicas 4 --max-replicas 4
+```
+
+Antes de iniciar se confirmaron **4 réplicas listas y readiness UP por servicio**. Se ejecutaron tres corridas consecutivas desde Azure Cloud Shell: 60 compradores nuevos por corrida, subasta de 10 minutos, 5 pujas/s y caída de una réplica de cada servicio a los 30 s, con 90 s de observación posteriores. El sondeo paralelo conservó la metodología de la etapa anterior; aquí se exige reinicio confirmado de la víctima y **cuatro** réplicas con `ready=true` por servicio. Sus tiempos son cotas superiores observadas.
+
+El script original no se alteró: su criterio de reposición sigue exigiendo un mínimo de dos réplicas. La recuperación de las cuatro se demuestra por separado con los sondeos NDJSON, las cuatro entradas por servicio en `reposicion.replicas` y las comprobaciones inicial/final. Los archivos `resultado-caos-*.json` originales permanecen también en `~/cafeorbe-infra/verificacion/dis01/` de Cloud Shell.
+
+### Cuatro réplicas, corrida 1: `2a312409-c462-4366-8841-0339dc580c05`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T02:52:13.877Z |
+| Reposición, línea del script | 02:54:07.514 UTC; +113.6 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 02:53:09.840 UTC; **+56.0 s**; muestra previa aún sin cumplir: +48.0 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 02:53:02.987 UTC; **+49.1 s**; muestra previa aún sin cumplir: +41.1 s |
+| WebSocket | 14 cortes; reconexión máxima **2.530 s** |
+| REST en los 30 s tras la falla | **0 %** (0/61); p95 **408 ms**; máxima 2784 ms |
+| Pujas | 599 enviadas; 164 aceptadas; **0 perdidas y 0 fantasma**; 38 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 5 · {"conexion · no abrió en 1500 ms":4,"conexion · no abrió en 800 ms":1}
+```
+
+Salida JSON de `bash verificar-cierre.sh 2a312409-c462-4366-8841-0339dc580c05`:
+
+```json
+{"subasta": "2a312409-c462-4366-8841-0339dc580c05", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T025143877Z.json), [log del caos](mejora4-4replicas/caos-1.log), [verificador de cierre](mejora4-4replicas/cierre-1.log), [réplicas auction](mejora4-4replicas/replicas-1-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas/replicas-1-realtime-gateway.ndjson).
+
+### Cuatro réplicas, corrida 2: `928a9147-907c-4828-b89d-fe3cbbb15340`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T03:02:54.482Z |
+| Reposición, línea del script | 03:05:03.332 UTC; +128.8 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 03:03:53.935 UTC; **+59.5 s**; muestra previa aún sin cumplir: +51.3 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 03:03:44.914 UTC; **+50.4 s**; muestra previa aún sin cumplir: +41.8 s |
+| WebSocket | 11 cortes; reconexión máxima **2.516 s** |
+| REST en los 30 s tras la falla | **0 %** (0/69); p95 **317 ms**; máxima 513 ms |
+| Pujas | 599 enviadas; 172 aceptadas; **0 perdidas y 0 fantasma**; 39 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 4 · {"conexion · no abrió en 1500 ms":4}
+```
+
+Salida JSON de `bash verificar-cierre.sh 928a9147-907c-4828-b89d-fe3cbbb15340`:
+
+```json
+{"subasta": "928a9147-907c-4828-b89d-fe3cbbb15340", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T030224482Z.json), [log del caos](mejora4-4replicas/caos-2.log), [verificador de cierre](mejora4-4replicas/cierre-2.log), [réplicas auction](mejora4-4replicas/replicas-2-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas/replicas-2-realtime-gateway.ndjson).
+
+### Cuatro réplicas, corrida 3: `e70295b8-4af8-495b-a70f-ae3ac84b0e0b`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T03:13:41.160Z |
+| Reposición, línea del script | 03:15:36.257 UTC; +115.1 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 03:14:40.122 UTC; **+59.0 s**; muestra previa aún sin cumplir: +50.1 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 03:14:29.598 UTC; **+48.4 s**; muestra previa aún sin cumplir: +39.7 s |
+| WebSocket | 14 cortes; reconexión máxima **4.458 s** |
+| REST en los 30 s tras la falla | **0 %** (0/55); p95 **1488 ms**; máxima 1526 ms |
+| Pujas | 599 enviadas; 172 aceptadas; **0 perdidas y 0 fantasma**; 43 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 6 · {"conexion · no abrió en 1500 ms":6}
+```
+
+Salida JSON de `bash verificar-cierre.sh e70295b8-4af8-495b-a70f-ae3ac84b0e0b`:
+
+```json
+{"subasta": "e70295b8-4af8-495b-a70f-ae3ac84b0e0b", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T031311161Z.json), [log del caos](mejora4-4replicas/caos-3.log), [verificador de cierre](mejora4-4replicas/cierre-3.log), [réplicas auction](mejora4-4replicas/replicas-3-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas/replicas-3-realtime-gateway.ndjson).
+
+### Comparación y conclusión
+
+| Configuración por servicio | Capacidad total | WS máximo por corrida | REST por corrida | Corridas con 4/4 criterios |
+|---|---|---|---|---|
+| 2 × 1 vCPU / 2 GiB | 2 vCPU / 4 GiB | 6,123 / 6,402 / 12,458 s | 1,67 / 0 / 4,35 % | 2/3 |
+| 4 × 0,5 vCPU / 1 GiB | 2 vCPU / 4 GiB | 2.530 / 2.516 / 4.458 s | 0 / 0 / 0 % | **3/3** |
+
+**Las tres corridas con cuatro réplicas cumplen los cuatro criterios medidos y la comprobación de cierre/cobro/abono.** Esta configuración satisface los umbrales de DIS-01 en las tres repeticiones, a diferencia de la etapa con dos réplicas. Tener tres réplicas sanas durante la falla muestra un mejor resultado en estas pruebas que concentrar la misma capacidad total en dos réplicas.
+
+Con 0,5 vCPU, auction volvió a observarse lista a los **56.0–59.5 s** y realtime a los **48.4–50.4 s**, frente a 45,3–51,9 s y 35,9–46,0 s respectivamente con 1 vCPU. Se conserva la distinción entre recuperación observada por sondeo y la línea tardía de reposición del script.
+
+La comparación modifica CPU, memoria por réplica y cantidad de réplicas conjuntamente, manteniendo la capacidad total asignada; no permite aislar el efecto individual de cada factor. Tres repeticiones no garantizan el resultado de todas las fallas futuras, ni demuestran que el ingreso haya dejado de dirigir tráfico a contenedores que reinician.
+
+**Configuración final vigente:** `auction-service` y `realtime-gateway` quedan con **4 réplicas fijas de 0,5 vCPU / 1 GiB cada una**, por la autorización del operador para esta prueba. La comprobación final confirma cuatro réplicas listas y readiness UP por app. Evidencia en [`mejora4-4replicas/readiness-final.json`](mejora4-4replicas/readiness-final.json), `final-{app}.json` y `replicas-final-{app}.json`. Los snapshots `antes-{app}.json` conservan la configuración de dos réplicas de 1 vCPU; el estado original de 0,25 vCPU sigue conservado en la etapa anterior y en `~/.cafeorbe-ren01-estado` de Cloud Shell. No se ejecutó restauración.

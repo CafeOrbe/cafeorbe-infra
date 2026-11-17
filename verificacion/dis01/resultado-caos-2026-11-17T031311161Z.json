@@ -1,0 +1,269 @@
+{
+  "subasta": "e70295b8-4af8-495b-a70f-ae3ac84b0e0b",
+  "inicio": "2026-11-17T03:13:11.161Z",
+  "falla": "2026-11-17T03:13:41.160Z",
+  "victimas": [
+    {
+      "app": "auction-service",
+      "victima": "auction-service--latest-13515099-24cd-4ba4-af14-a8776a914985",
+      "reiniciosAntes": 2
+    },
+    {
+      "app": "realtime-gateway",
+      "victima": "realtime-gateway--latest-a076f74d-1f67-4953-b792-f38bc5e5e2a0",
+      "reiniciosAntes": 2
+    }
+  ],
+  "clientes": 60,
+  "pujasPorSegundo": 5,
+  "enviadas": 599,
+  "rechazadasPropias": 384,
+  "pujasAceptadas": 172,
+  "pujasAceptadasPerdidas": [],
+  "pujasFantasma": [],
+  "pujasSinRespuesta": 43,
+  "rest": {
+    "muestras": 241,
+    "errores": 0,
+    "en30sTrasFalla": {
+      "muestras": 55,
+      "errores": 0,
+      "porcentaje": 0,
+      "latenciaP95Ms": 1488,
+      "latenciaMaximaMs": 1526
+    },
+    "codigos": {
+      "200": 241
+    }
+  },
+  "websocket": {
+    "cortados": 14,
+    "reconexionMaximaMs": 4458,
+    "reconexiones": [
+      {
+        "usuario": "5c249e9d-a6e9-5ae3-8c47-b735210abb8b",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:50.840Z",
+        "ms": 587,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "365c30f7-5638-5e58-a9dc-e7113214b0eb",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:51.003Z",
+        "ms": 750,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "254b597a-c15f-5a3f-ae97-c52c87015db2",
+        "cerradaEn": "2026-11-17T03:13:50.251Z",
+        "abiertaEn": "2026-11-17T03:13:51.006Z",
+        "ms": 755,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "4052acf6-3e94-57d5-8831-feaec8fe8119",
+        "cerradaEn": "2026-11-17T03:13:50.254Z",
+        "abiertaEn": "2026-11-17T03:13:51.026Z",
+        "ms": 772,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "a4ed21c6-94f6-5077-9d2f-2b17bd998c20",
+        "cerradaEn": "2026-11-17T03:13:50.256Z",
+        "abiertaEn": "2026-11-17T03:13:51.035Z",
+        "ms": 779,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "600df855-68e4-5f7b-9b30-362e20308c04",
+        "cerradaEn": "2026-11-17T03:13:50.256Z",
+        "abiertaEn": "2026-11-17T03:13:51.038Z",
+        "ms": 782,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "c7536ada-0025-55ff-bc60-7ead6468aff3",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:51.041Z",
+        "ms": 788,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "e85c5df4-3f0f-55c9-9341-a6bf8309972a",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:51.055Z",
+        "ms": 802,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "42f86287-4acb-5918-92b7-2942535501cd",
+        "cerradaEn": "2026-11-17T03:13:50.256Z",
+        "abiertaEn": "2026-11-17T03:13:51.074Z",
+        "ms": 818,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "8bb40d88-b104-56f4-a1f9-d31e80ba13d4",
+        "cerradaEn": "2026-11-17T03:13:50.256Z",
+        "abiertaEn": "2026-11-17T03:13:51.090Z",
+        "ms": 834,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "56674b4c-d7fc-5da2-869d-8c87483e5ea4",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:52.840Z",
+        "ms": 2587,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:13:50.487Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1807
+          }
+        ]
+      },
+      {
+        "usuario": "13d3f1af-fdd4-5553-b2a3-4a2a9595e2ba",
+        "cerradaEn": "2026-11-17T03:13:50.256Z",
+        "abiertaEn": "2026-11-17T03:13:52.856Z",
+        "ms": 2600,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:13:50.475Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1801
+          }
+        ]
+      },
+      {
+        "usuario": "41239a69-82a7-51ea-ba7b-3008fa7743a9",
+        "cerradaEn": "2026-11-17T03:13:50.254Z",
+        "abiertaEn": "2026-11-17T03:13:54.687Z",
+        "ms": 4433,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:13:50.513Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1783
+          },
+          {
+            "en": "2026-11-17T03:13:52.539Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1586
+          }
+        ]
+      },
+      {
+        "usuario": "2fe3050a-9fab-5a1a-90df-0af79fe7b0eb",
+        "cerradaEn": "2026-11-17T03:13:50.253Z",
+        "abiertaEn": "2026-11-17T03:13:54.711Z",
+        "ms": 4458,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:13:50.487Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1813
+          },
+          {
+            "en": "2026-11-17T03:13:52.546Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1607
+          }
+        ]
+      }
+    ],
+    "erroresDeConexion": 6,
+    "mensajesError": 43,
+    "fallosPorMotivo": {
+      "conexion · no abrió en 1500 ms": 6
+    },
+    "intentosFallidos": [
+      {
+        "usuario": "13d3f1af-fdd4-5553-b2a3-4a2a9595e2ba",
+        "en": "2026-11-17T03:13:50.475Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1801
+      },
+      {
+        "usuario": "56674b4c-d7fc-5da2-869d-8c87483e5ea4",
+        "en": "2026-11-17T03:13:50.487Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1807
+      },
+      {
+        "usuario": "41239a69-82a7-51ea-ba7b-3008fa7743a9",
+        "en": "2026-11-17T03:13:50.513Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1783
+      },
+      {
+        "usuario": "2fe3050a-9fab-5a1a-90df-0af79fe7b0eb",
+        "en": "2026-11-17T03:13:50.487Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1813
+      },
+      {
+        "usuario": "41239a69-82a7-51ea-ba7b-3008fa7743a9",
+        "en": "2026-11-17T03:13:52.539Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1586
+      },
+      {
+        "usuario": "2fe3050a-9fab-5a1a-90df-0af79fe7b0eb",
+        "en": "2026-11-17T03:13:52.546Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1607
+      }
+    ]
+  },
+  "reposicion": {
+    "observadaEn": "2026-11-17T03:15:36.257Z",
+    "replicas": {
+      "auction": {
+        "auction-service--latest-13515099-24cd-4ba4-af14-a8776a914985": 3,
+        "auction-service--latest-0c7670f5-4b18-4428-8723-13652d83b946": 0,
+        "auction-service--latest-7ac221e5-b641-4193-8daf-6debbe53722c": 0,
+        "auction-service--latest-5394b38d-a490-4ad4-96b5-d37cbce222f0": 0
+      },
+      "realtime": {
+        "realtime-gateway--latest-a076f74d-1f67-4953-b792-f38bc5e5e2a0": 3,
+        "realtime-gateway--latest-1bffcad5-cf00-4280-867b-aa4fc0f625f7": 0,
+        "realtime-gateway--latest-153ae834-30b4-4f70-ad95-17129336e409": 0,
+        "realtime-gateway--latest-42fa5f02-dd86-4579-b722-ac33bd856764": 0
+      }
+    }
+  },
+  "criterios": {
+    "Errores REST en los 30 s tras la falla < 2 %": true,
+    "Reconexión WebSocket < 10 s": true,
+    "0 pujas aceptadas perdidas": true,
+    "Réplicas repuestas (2 por servicio, sin la caída)": true
+  }
+}
