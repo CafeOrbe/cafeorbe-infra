@@ -29,7 +29,9 @@ az containerapp update -n api-gateway -g "$RG" --min-replicas 2 --max-replicas 4
 echo "→ Auction y realtime: 0,5 vCPU / 1 GiB, mínimo 4, máximo 6 (DIS-01)..."
 for app in $APPS_DIS01; do
   echo "  · $app → mínimo 4, máximo 6"
-  az containerapp update -n "$app" -g "$RG" --cpu 0.5 --memory 1Gi --min-replicas 4 --max-replicas 6 --only-show-errors
+  opciones_pool=()
+  if [[ "$app" == auction-service ]]; then opciones_pool=(--set-env-vars DB_POOL_MAX=2); fi
+  az containerapp update -n "$app" -g "$RG" --cpu 0.5 --memory 1Gi --min-replicas 4 --max-replicas 6 "${opciones_pool[@]}" --only-show-errors
 done
 
 echo ""

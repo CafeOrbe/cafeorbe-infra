@@ -34,6 +34,10 @@ if pathlib.Path(sys.argv[0]).name == "az":
         resources = data["properties"]["template"]["containers"][0]["resources"]
         if arg("--cpu"): resources["cpu"] = float(arg("--cpu"))
         if arg("--memory"): resources["memory"] = arg("--memory")
+        if arg("--set-env-vars"):
+            key, value = arg("--set-env-vars").split("=", 1)
+            container = data["properties"]["template"]["containers"][0]
+            container["env"] = [x for x in container["env"] if x["name"] != key] + [{"name": key, "value": value}]
         config(app).write_text(json.dumps(data))
     elif args[:3] == ["containerapp", "revision", "list"]:
         print(app + "--latest")
@@ -79,6 +83,9 @@ class Topologia(unittest.TestCase):
                                                  "env": [{"name": "TEST_VALUE", "value": "test-only-secret"}],
                                                  "resources": {"cpu": 0.25, "memory": "0.5Gi", "ephemeralStorage": "1Gi"}}]}}}
                 self.original[app] = copy.deepcopy(data)
+                if service == "auction-service":
+                    data["properties"]["template"]["containers"][0]["env"].append({"name": "DB_POOL_MAX", "value": "10"})
+                    self.original[app] = copy.deepcopy(data)
                 self.write(app, data)
 
     def write(self, app, data):
@@ -97,6 +104,7 @@ class Topologia(unittest.TestCase):
     def test_configurar_qa_prod_preserva_campos(self):
         for environment, suffix in (("qa", ""), ("prod", "-prod")):
             self.run_script("dis-01-configurar.sh", environment)
+            self.run_script("dis-01-configurar.sh", environment)  # Reaplicar no duplica DB_POOL_MAX.
             for service in SERVICIOS:
                 app = service+suffix
                 data, before = self.read(app), self.original[app]
@@ -108,8 +116,10 @@ class Topologia(unittest.TestCase):
                 self.assertEqual(scale["rules"][0]["http"]["metadata"]["concurrentRequests"], "20")
                 container = template["containers"][0]
                 old = before["properties"]["template"]["containers"][0]
-                for field in ("image", "env", "name"):
+                for field in ("image", "name"):
                     self.assertEqual(container[field], old[field])
+                expected_env = old["env"] if service != "auction-service" else [x for x in old["env"] if x["name"] != "DB_POOL_MAX"] + [{"name": "DB_POOL_MAX", "value": "2"}]
+                self.assertEqual(container["env"], expected_env)
                 self.assertEqual(data["properties"]["configuration"], before["properties"]["configuration"])
                 self.assertEqual(container["resources"]["ephemeralStorage"], "1Gi")
                 resources = container["resources"]
@@ -136,6 +146,13 @@ class Topologia(unittest.TestCase):
         self.write("auction-service", data)
         self.run_script("dis-01-verificar.sh", "qa", success=False)
 
+    def test_verificar_rechaza_pool_que_agota_presupuesto(self):
+        self.run_script("dis-01-configurar.sh", "qa")
+        data = self.read("auction-service")
+        data["properties"]["template"]["containers"][0]["env"] = [{"name": "DB_POOL_MAX", "value": "10"}]
+        self.write("auction-service", data)
+        self.run_script("dis-01-verificar.sh", "qa", success=False)
+
     def test_encender_conserva_topologia_y_servicios_base(self):
         self.run_script("azure-encender.sh")
         for service in (*SERVICIOS, "identity-service", "wallet-service", "streaming-service"):
@@ -145,6 +162,8 @@ class Topologia(unittest.TestCase):
             if service in ("auction-service", "realtime-gateway"):
                 self.assertEqual(template["containers"][0]["resources"]["cpu"], 0.5)
                 self.assertEqual(template["containers"][0]["resources"]["memory"], "1Gi")
+                if service == "auction-service":
+                    self.assertEqual([x for x in template["containers"][0]["env"] if x["name"] == "DB_POOL_MAX"], [{"name": "DB_POOL_MAX", "value": "2"}])
             else:
                 self.assertEqual(template["containers"][0]["resources"], self.original[service]["properties"]["template"]["containers"][0]["resources"])
 

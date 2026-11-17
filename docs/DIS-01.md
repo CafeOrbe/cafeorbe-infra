@@ -67,6 +67,19 @@ conserva API en 2–4 y agrega la regla HTTP de 20 peticiones concurrentes por r
 Conserva imágenes, variables y los demás campos de la app. Los temporales tienen permisos `600`
 y se eliminan al terminar.
 
+### Presupuesto de conexiones a PostgreSQL
+
+Auction declara además `DB_POOL_MAX=2` en ambos pipelines, el configurador y el encendido. Es la
+única variable que el configurador reemplaza deliberadamente; conserva las demás. La prueba real
+de escalado encontró un override anterior de 10 por réplica: con seis réplicas podía pedir 60
+conexiones y bloquear los nuevos arranques. El PostgreSQL de QA tiene `max_connections=50`, con
+15 conexiones reservadas y 35 utilizables por usuarios normales; no se aumentó el servidor.
+
+Con los límites actuales de QA, auction consume como máximo `6 × 2 = 12`; identity, wallet y
+streaming usan pools de 3 y máximos de 2 réplicas cada uno (`3 × 2 × 3 = 18`). El máximo conjunto
+es 30, dejando cinco conexiones de margen. Recalcular este presupuesto si cambian los pools o
+límites de cualquiera de esos servicios; no basta con abrir el máximo de réplicas.
+
 ```bash
 ./scripts/dis-01-configurar.sh qa
 INTERNAL_TOKEN='valor resuelto de forma segura' ./scripts/dis-01-verificar.sh qa

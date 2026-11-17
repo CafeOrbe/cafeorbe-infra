@@ -26,6 +26,7 @@ for servicio in api-gateway auction-service realtime-gateway; do
   maximas="$(jq -r '.properties.template.scale.maxReplicas' <<<"$configuracion")"
   cpu="$(jq -r '.properties.template.containers[0].resources.cpu' <<<"$configuracion")"
   memoria="$(jq -r '.properties.template.containers[0].resources.memory' <<<"$configuracion")"
+  pool="$(jq -r '.properties.template.containers[0].env[]? | select(.name == "DB_POOL_MAX") | .value' <<<"$configuracion")"
   fqdn="$(jq -r '.properties.configuration.ingress.fqdn' <<<"$configuracion")"
   revision="$(az containerapp revision list --name "$app" --resource-group "$GRUPO_RECURSOS" \
     --query '[?properties.active].name | [0]' --output tsv)"
@@ -35,13 +36,14 @@ for servicio in api-gateway auction-service realtime-gateway; do
   concurrencia="$(jq -r '.properties.template.scale.rules[]? | select(.name == "http-concurrency") | .http.metadata.concurrentRequests' <<<"$configuracion")"
   estado="$(curl --fail --silent --show-error --max-time 10 "https://$fqdn/actuator/health/readiness" || true)"
 
-  printf '%-20s min=%s max=%s listas=%s cpu=%s memoria=%s concurrencia=%s sondas=%s readiness=%s\n' \
-    "$app" "$minimas" "$maximas" "$replicas" "$cpu" "$memoria" "$concurrencia" "$sondas" "$estado"
+  printf '%-20s min=%s max=%s listas=%s cpu=%s memoria=%s pool=%s concurrencia=%s sondas=%s readiness=%s\n' \
+    "$app" "$minimas" "$maximas" "$replicas" "$cpu" "$memoria" "${pool:--}" "$concurrencia" "$sondas" "$estado"
 
   if [[ "$minimas" != "$min_esperado" || "$maximas" != "$max_esperado" || "$replicas" -lt "$min_esperado" || "$replicas" -gt "$max_esperado" || "$concurrencia" != "20" \
       || "$sondas" != *'"Startup"'* || "$sondas" != *'"Liveness"'* || "$sondas" != *'"Readiness"'* \
       || "$estado" != *'"UP"'* \
-      || ( "$servicio" != api-gateway && ( "$cpu" != "0.5" || "$memoria" != "1Gi" ) ) ]]; then
+      || ( "$servicio" != api-gateway && ( "$cpu" != "0.5" || "$memoria" != "1Gi" ) ) \
+      || ( "$servicio" == auction-service && "$pool" != "2" ) ]]; then
     fallos=$((fallos + 1))
   fi
 done
