@@ -51,6 +51,12 @@ configurar() {
         .properties.template.containers[0].resources.cpu = 0.5
         | .properties.template.containers[0].resources.memory = "1Gi"
       else . end
+    | if $servicio == "auction-service" then
+        .properties.template.containers[0].env = (
+          (.properties.template.containers[0].env // [] | map(select(.name != "DB_POOL_MAX")))
+          + [{"name": "DB_POOL_MAX", "value": "2"}]
+        )
+      else . end
     | .properties.template.scale.rules = [
         {
           "name": "http-concurrency",
