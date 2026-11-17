@@ -1,0 +1,46 @@
+[
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 6,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-13515099-24cd-4ba4-af14-a8776a914985"
+  },
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 0,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-0c7670f5-4b18-4428-8723-13652d83b946"
+  },
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 0,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-7ac221e5-b641-4193-8daf-6debbe53722c"
+  },
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 0,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-5394b38d-a490-4ad4-96b5-d37cbce222f0"
+  }
+]

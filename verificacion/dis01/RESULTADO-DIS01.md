@@ -373,4 +373,133 @@ bash verificar-cierre.sh "$REN01_SUBASTA"
 
 Se conservan los 30 s previos a la falla y los 90 s posteriores. En las seis corridas documentadas, esa carga habría terminado antes de un cierre a los 3 minutos; las consultas de reposición y la verificación de cierre pueden finalizar después. La duración total incluye además preparación y consultas de Azure. Cada tanda debe guardar su evidencia en un directorio nuevo.
 
-Los resultados históricos de este documento corresponden a subastas de 10 minutos; no se han repetido todavía con 3 minutos. Este parámetro se pasa explícitamente para DIS-01 y no cambia el valor predeterminado de preparación de REN-01.
+Las etapas Mejora 4 y Mejora 4b corresponden a subastas de 10 minutos. La validación con subastas de 3 minutos se documenta a continuación. Este parámetro se pasa explícitamente para DIS-01 y no cambia el valor predeterminado de preparación de REN-01.
+
+## Validación con subastas de 3 minutos
+
+Tanda del **17 nov 2026 (UTC)**: tres nuevas corridas con `node preparar-ren01.mjs --compradores 60 --minutos 3`, manteniendo **4 réplicas fijas de 0,5 vCPU / 1 GiB** en auction y realtime. Se conservan 5 pujas/s, 30 s antes de la falla y 90 s después. Código de infra `3695513`; sin cambios del generador, servicios, sondas ni política de reconexión.
+
+Las 4 réplicas por servicio estaban listas antes de comenzar. La carga termina antes del cierre a los 3 minutos; la comprobación de reposición y las consultas de cierre pueden finalizar después. El sondeo complementario conserva el mismo formato y, si al terminar el generador aún no hay cuatro réplicas listas, continúa hasta confirmarlas o agotar 180 s adicionales.
+
+El contador auxiliar del ejecutor rechazó inicialmente las fechas ISO con guiones y marcó por error las primeras corridas como inválidas. El generador original confirmó los reinicios y sus resultados se conservaron sin cambios. Se verificaron por separado las fechas, las cuatro réplicas, los criterios y el cierre de cada subasta, y se detuvo el bucle tras la tercera corrida para evitar repeticiones innecesarias. El clasificador se corrigió para las ejecuciones posteriores. [Nota de control del ejecutor](mejora4-4replicas-3min-20261117T033752Z/control-ejecutor.txt).
+
+### Tres minutos, corrida 1: `349acc15-bea2-42fb-b770-5dd705b79a83`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T03:39:28.130Z |
+| Reposición, línea del script | 03:41:21.925 UTC; +113.8 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 03:40:28.035 UTC; **+59.9 s**; muestra previa aún sin cumplir: +51.3 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 03:40:17.592 UTC; **+49.5 s**; muestra previa aún sin cumplir: +41.0 s |
+| WebSocket | 20 cortes; reconexión máxima **6.206 s** |
+| REST en los 30 s tras la falla | **0 %** (0/56); p95 **1473 ms**; máxima 1510 ms |
+| Pujas | 599 enviadas; 173 aceptadas; **0 perdidas y 0 fantasma**; 43 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 9 · {"conexion · no abrió en 1500 ms":9}
+  6206 ms (corte 03:39:36.650): 36.876 conexion/no abrió en 1500 ms (1787 ms) → 38.923 conexion/no abrió en 1500 ms (1585 ms) → 40.713 conexion/no abrió en 1500 ms (1593 ms)
+```
+
+Salida JSON de `bash verificar-cierre.sh 349acc15-bea2-42fb-b770-5dd705b79a83`:
+
+```json
+{"subasta": "349acc15-bea2-42fb-b770-5dd705b79a83", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T033858130Z.json), [log del caos](mejora4-4replicas-3min-20261117T033752Z/caos-1.log), [verificador de cierre](mejora4-4replicas-3min-20261117T033752Z/cierre-1.log), [réplicas auction](mejora4-4replicas-3min-20261117T033752Z/replicas-1-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas-3min-20261117T033752Z/replicas-1-realtime-gateway.ndjson).
+
+### Tres minutos, corrida 2: `8dc9e40a-3861-4c7f-9b66-e744268c0090`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T03:43:12.550Z |
+| Reposición, línea del script | 03:45:07.653 UTC; +115.1 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 03:44:21.119 UTC; **+68.6 s**; muestra previa aún sin cumplir: +60.6 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 03:44:08.424 UTC; **+55.9 s**; muestra previa aún sin cumplir: +46.9 s |
+| WebSocket | 19 cortes; reconexión máxima **2.627 s** |
+| REST en los 30 s tras la falla | **0 %** (0/66); p95 **499 ms**; máxima 896 ms |
+| Pujas | 599 enviadas; 175 aceptadas; **0 perdidas y 0 fantasma**; 60 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 8 · {"conexion · no abrió en 1500 ms":8}
+```
+
+Salida JSON de `bash verificar-cierre.sh 8dc9e40a-3861-4c7f-9b66-e744268c0090`:
+
+```json
+{"subasta": "8dc9e40a-3861-4c7f-9b66-e744268c0090", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T034242548Z.json), [log del caos](mejora4-4replicas-3min-20261117T033752Z/caos-2.log), [verificador de cierre](mejora4-4replicas-3min-20261117T033752Z/cierre-2.log), [réplicas auction](mejora4-4replicas-3min-20261117T033752Z/replicas-2-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas-3min-20261117T033752Z/replicas-2-realtime-gateway.ndjson).
+
+### Tres minutos, corrida 3: `e4199306-d6b9-4928-b0a9-d089a8ae583b`
+
+| Medición | Resultado |
+|---|---|
+| Falla (UTC) | 2026-11-17T03:46:59.144Z |
+| Reposición, línea del script | 03:48:52.852 UTC; +113.7 s |
+| Auction: reinicio confirmado y 4 réplicas listas | 03:48:25.637 UTC; **+86.5 s**; muestra previa aún sin cumplir: +78.3 s |
+| Realtime: reinicio confirmado y 4 réplicas listas | 03:48:12.515 UTC; **+73.4 s**; muestra previa aún sin cumplir: +65.7 s |
+| WebSocket | 13 cortes; reconexión máxima **2.603 s** |
+| REST en los 30 s tras la falla | **0 %** (0/60); p95 **1447 ms**; máxima 2815 ms |
+| Pujas | 599 enviadas; 177 aceptadas; **0 perdidas y 0 fantasma**; 91 sin respuesta (dato informativo) |
+| Cierre y wallet | **FINALIZADA, 1 evento de cierre, 1 COBRO, 1 ABONO_VENTA; `cumple: true`** |
+
+| Criterio del script original | Resultado |
+|---|---|
+| Errores REST en los 30 s tras la falla < 2 % | ✅ |
+| Reconexión WebSocket < 10 s | ✅ |
+| 0 pujas aceptadas perdidas | ✅ |
+| Réplicas repuestas (2 por servicio, sin la caída) | ✅ |
+
+Intentos fallidos y reconexiones de 5 s o más (si no aparece ninguna reconexión, todas fueron menores de 5 s):
+
+```text
+Intentos fallidos: 3 · {"conexion · no abrió en 1500 ms":3}
+```
+
+Salida JSON de `bash verificar-cierre.sh e4199306-d6b9-4928-b0a9-d089a8ae583b`:
+
+```json
+{"subasta": "e4199306-d6b9-4928-b0a9-d089a8ae583b", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}
+```
+
+Evidencia: [resultado original](resultado-caos-2026-11-17T034629143Z.json), [log del caos](mejora4-4replicas-3min-20261117T033752Z/caos-3.log), [verificador de cierre](mejora4-4replicas-3min-20261117T033752Z/cierre-3.log), [réplicas auction](mejora4-4replicas-3min-20261117T033752Z/replicas-3-auction-service.ndjson) y [réplicas realtime](mejora4-4replicas-3min-20261117T033752Z/replicas-3-realtime-gateway.ndjson).
+
+### Resultado de la tanda corta
+
+**3/3 corridas cumplen los cuatro criterios medidos.** Las tres subastas quedaron FINALIZADAS, con exactamente un evento de cierre, un COBRO y un ABONO_VENTA; `cumple: true`.
+
+| Falla UTC | Reconexión máxima | REST 30 s | p95 REST | Criterios |
+|---|---|---|---|---|
+| 03:39:28.130 | 6.206 s | 0 % (0/56) | 1473 ms | 4/4 |
+| 03:43:12.550 | 2.627 s | 0 % (0/66) | 499 ms | 4/4 |
+| 03:46:59.144 | 2.603 s | 0 % (0/60) | 1447 ms | 4/4 |
+
+La observación de carga de 90 s posteriores a la falla terminó nominalmente entre **36.4 y 37.4 s antes** del cierre programado. Se mantuvieron los 599 envíos por corrida del generador. Las tres duraciones reducidas conservaron la ventana completa de medición.
+
+Auction volvió a observarse con cuatro réplicas listas a los **59.9–86.5 s** tras la falla y realtime a los **49.5–73.4 s**. Son cotas superiores del sondeo, no el instante exacto de recuperación.
+
+**Configuración final:** se mantienen cuatro réplicas de 0,5 vCPU / 1 GiB por app, todas listas y readiness UP. La verificación final está en [readiness-final.json](mejora4-4replicas-3min-20261117T033752Z/readiness-final.json), junto con snapshots de recursos y réplicas. La capacidad total asignada no cambió: 2 vCPU y 4 GiB por servicio.
+
+Las nuevas mediciones se suman a las tres corridas anteriores de 10 minutos con cuatro réplicas. Tres repeticiones con duración reducida no garantizan todos los fallos futuros. Se conserva el p95 medido en cada corrida; no se certifican aquí otros escenarios de rendimiento.

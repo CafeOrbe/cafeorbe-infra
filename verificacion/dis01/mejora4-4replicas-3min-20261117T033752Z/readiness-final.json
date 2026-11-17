@@ -1,0 +1,25 @@
+{
+  "observadoEn": "2026-11-17T03:50:13.682891+00:00",
+  "apps": {
+    "auction-service": {
+      "cpu": 0.5,
+      "memory": "1Gi",
+      "minReplicas": 4,
+      "maxReplicas": 4,
+      "replicasReady": 4,
+      "readiness": {
+        "status": "UP"
+      }
+    },
+    "realtime-gateway": {
+      "cpu": 0.5,
+      "memory": "1Gi",
+      "minReplicas": 4,
+      "maxReplicas": 4,
+      "replicasReady": 4,
+      "readiness": {
+        "status": "UP"
+      }
+    }
+  }
+}
