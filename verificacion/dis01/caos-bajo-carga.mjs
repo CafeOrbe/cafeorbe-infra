@@ -9,7 +9,7 @@
 //   - hora exacta de la falla, para medir en Grafana la degradación (≤ 30 s) y la alerta (≤ 2 min).
 // Un cierre y un cobro por subasta se comprueban después con verificar-cierre.py, cuando la subasta termina.
 //
-//   REN01_SUBASTA=<id EN_CURSO> node dis01/caos-bajo-carga.mjs [--clientes 60] [--pps 5] [--antes 30] [--despues 90] [--sin-caos]
+//   REN01_SUBASTA=<id EN_CURSO> node dis01/caos-bajo-carga.mjs [--clientes 60] [--pps 5] [--antes 30] [--despues 90] [--replicas-minimas 4] [--sin-caos]
 // Usa ../ren01/compradores.json (preparar-ren01.mjs). Necesita Azure CLI con acceso a cafeorbe-org.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
@@ -19,6 +19,8 @@ const API = process.env.API_URL ?? 'https://api-gateway.blackbay-48700ead.eastus
 const WS = process.env.WS_URL ?? 'wss://realtime-gateway.blackbay-48700ead.eastus2.azurecontainerapps.io'
 const SUBASTA = process.env.REN01_SUBASTA
 const N = arg('--clientes', 60), PPS = arg('--pps', 5), ANTES = arg('--antes', 30), DESPUES = arg('--despues', 90)
+const MIN_REPLICAS = arg('--replicas-minimas', 4)
+if (!Number.isInteger(MIN_REPLICAS) || MIN_REPLICAS < 2) throw new Error('--replicas-minimas debe ser un entero >= 2')
 const SIN_CAOS = process.argv.includes('--sin-caos')
 process.on('SIGINT', () => process.exit(130))
 const MAX_REPOSICION = arg('--reposicion', 180)
@@ -197,7 +199,7 @@ siguienteMinimo = detalle.cuerpo.siguienteMinimo
 const base = detalle.cuerpo.cantidadPujas
 
 const antesDeCaos = SIN_CAOS ? null : { auction: replicas('auction-service'), realtime: replicas('realtime-gateway') }
-if (antesDeCaos) for (const r of Object.values(antesDeCaos)) if (r.nombres.length < 2) throw new Error(`${r.app} tiene ${r.nombres.length} réplica(s); DIS-01 exige 2`)
+if (antesDeCaos) for (const r of Object.values(antesDeCaos)) if (r.nombres.length < MIN_REPLICAS) throw new Error(`${r.app} tiene ${r.nombres.length} réplica(s); DIS-01 exige ${MIN_REPLICAS}`)
 
 console.log(`DIS-01 · ${N} compradores, ${PPS} pujas/s, falla a los ${ANTES} s, observación ${DESPUES} s después`)
 const clientes = compradores.map(cliente)
@@ -268,7 +270,7 @@ if (antesDeCaos) {
     const listas = Object.values(actuales).every((r) => {
       const v = victimas.find((x) => x.app === r.app)
       const repuesta = !r.nombres.includes(v.victima) || (r.reinicios[v.victima] ?? 0) > v.reiniciosAntes
-      return r.nombres.length >= 2 && r.enMarcha >= 2 && repuesta
+      return r.nombres.length >= MIN_REPLICAS && r.enMarcha >= MIN_REPLICAS && repuesta
     })
     if (listas) reposicion = { observadaEn: iso(ahora()), replicas: Object.fromEntries(Object.entries(actuales).map(([k, r]) => [k, r.reinicios])) }
     else await esperar(5000)
@@ -277,7 +279,7 @@ if (antesDeCaos) {
 
 const resultado = {
   subasta: SUBASTA, inicio: iso(inicio), falla: antesDeCaos ? iso(falla) : null, victimas,
-  clientes: N, pujasPorSegundo: PPS, enviadas, rechazadasPropias: rechazadas,
+  clientes: N, pujasPorSegundo: PPS, replicasMinimas: MIN_REPLICAS, enviadas, rechazadasPropias: rechazadas,
   pujasAceptadas: finalPujas == null ? null : finalPujas - base, pujasAceptadasPerdidas: perdidas, pujasFantasma: fantasmas,
   // Informativo: pujas enviadas sin aviso de aceptada ni de rechazo (salieron por un socket que se estaba cerrando).
   pujasSinRespuesta: finalPujas == null ? null : Math.max(0, enviadas - (finalPujas - base) - rechazadas),
@@ -295,7 +297,7 @@ const criterios = antesDeCaos ? [
   ['Errores REST en los 30 s tras la falla < 2 %', resultado.rest.en30sTrasFalla.porcentaje !== null && resultado.rest.en30sTrasFalla.porcentaje < 2],
   ['Reconexión WebSocket < 10 s', reconexiones.length > 0 && maxReconexion < 10000],
   ['0 pujas aceptadas perdidas', finalPujas != null && perdidas.length === 0 && fantasmas.length === 0 && finalPujas > base],
-  ['Réplicas repuestas (2 por servicio, sin la caída)', !!reposicion],
+  [`Réplicas repuestas (${MIN_REPLICAS} por servicio, sin la caída)`, !!reposicion],
 ] : []
 resultado.criterios = Object.fromEntries(criterios)
 const archivo = new URL(`./resultado-caos-${iso(inicio).replace(/[:.]/g, '')}.json`, import.meta.url)
