@@ -42,10 +42,12 @@
     },
     {
       "type": "stat", "title": "Login p95 (SEG-01)",
+      "description": "p95 de los logins con Google de los últimos 5 min; se actualiza con cada login. Si no hubo logins recientes, conserva el último valor calculado (hasta 6 h) en lugar de quedar vacío. Meta: < 3 s.",
       "gridPos": { "x": 18, "y": 1, "w": 6, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
-      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_milliseconds_bucket{application=\"identity-service\", uri=\"/api/sesion/google\"}[15m])))" }],
-      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 }, "overrides": [] },
+      "targets": [{ "refId": "A", "expr": "last_over_time((histogram_quantile(0.95, sum by (le) (rate(http_server_requests_milliseconds_bucket{application=\"identity-service\", uri=\"/api/sesion/google\"}[5m]))) > 0)[6h:15s])" }],
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0,
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 3000 }] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "area" }
     },
     {
