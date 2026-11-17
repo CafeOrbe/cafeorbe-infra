@@ -113,16 +113,29 @@
 
     { "type": "row", "title": "Disponibilidad (DIS-01)", "gridPos": { "x": 0, "y": 31, "w": 24, "h": 1 }, "collapsed": false, "panels": [] },
     {
-      "type": "stat", "title": "Réplicas activas por servicio (reportaron en el último minuto)",
+      "type": "stat", "title": "Réplicas activas por servicio (reportaron en los últimos 20 s)",
+      "description": "OBS-01/DIS-01: cada réplica envía sus métricas cada 10 s. Con una ventana de 20 s, una réplica caída deja de contar unos 20 s después de su último envío; con 1 min tardaba ~70 s (corrida de caos del 16 nov).",
       "gridPos": { "x": 0, "y": 32, "w": 24, "h": 5 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
-      "targets": [{ "refId": "A", "expr": "count by (application) (count by (application, instancia) (count_over_time(process_uptime_milliseconds[1m])))", "legendFormat": "{{application}}" }],
+      "interval": "5s",
+      "targets": [{ "refId": "A", "expr": "count by (application) (count by (application, instancia) (count_over_time(process_uptime_milliseconds[20s])))", "legendFormat": "{{application}}" }],
       "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name" }
     },
     {
+      "type": "timeseries", "title": "Segundos sin reportar por réplica (degradación visible en ≤ 30 s)",
+      "description": "OBS-01: una réplica sana envía cada 10 s, así que oscila entre 0 y 10 s. Una réplica caída sube sin parar y cruza la línea roja de 20 s unos 20 s después de su último envío; con el refresco de 5 s se ve en menos de 30 s. Su serie desaparece a los 5 min (sin datos nuevos).",
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
+      "interval": "5s",
+      "targets": [{ "refId": "A", "expr": "max by (application, instancia) (time() - timestamp(process_uptime_milliseconds{application=~\"api-gateway|auction-service|realtime-gateway\"}))", "legendFormat": "{{application}} · {{instancia}}" }],
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0,
+        "custom": { "thresholdsStyle": { "mode": "line+area" } },
+        "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 20 }] } }, "overrides": [] }
+    },
+    {
       "type": "timeseries", "title": "Peticiones por segundo por réplica (reparto ≥ 30 %)",
-      "gridPos": { "x": 0, "y": 37, "w": 12, "h": 8 },
+      "gridPos": { "x": 0, "y": 45, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
       "interval": "10s",
       "targets": [{ "refId": "A", "expr": "sum by (application, instancia) (rate(http_server_requests_milliseconds_count{application=~\"api-gateway|auction-service|realtime-gateway\"}[1m]))", "legendFormat": "{{application}} · {{instancia}}" }],
@@ -130,7 +143,7 @@
     },
     {
       "type": "timeseries", "title": "Participación de cada réplica en auction-service (%)",
-      "gridPos": { "x": 12, "y": 37, "w": 12, "h": 8 },
+      "gridPos": { "x": 12, "y": 45, "w": 12, "h": 8 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROM}" },
       "interval": "10s",
       "targets": [{ "refId": "A", "expr": "100 * sum by (instancia) (rate(http_server_requests_milliseconds_count{application=\"auction-service\"}[1m])) / scalar(sum(rate(http_server_requests_milliseconds_count{application=\"auction-service\"}[1m])))", "legendFormat": "{{instancia}}" }],
