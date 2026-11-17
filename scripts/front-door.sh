@@ -22,6 +22,10 @@ command -v az >/dev/null || { echo "Falta Azure CLI (az): usa Azure Cloud Shell.
 command -v jq >/dev/null || { echo "Falta jq." >&2; exit 1; }
 # shellcheck disable=SC2218 # 'command' llama al az real, no a la función de abajo.
 command az extension add --name containerapp --upgrade --only-show-errors >/dev/null
+# 'az afd' vive en la extensión cdn (solo hay versión preview). Sin instalarla aquí, el primer 'az afd' pregunta
+# "Do you want to install it now? (Y/n)" y, con la salida de error descartada, el script queda esperando.
+# shellcheck disable=SC2218
+command az extension add --name cdn --allow-preview true --upgrade --only-show-errors >/dev/null
 az() { command az "$@" --only-show-errors; }
 
 TEMPORALES=()
