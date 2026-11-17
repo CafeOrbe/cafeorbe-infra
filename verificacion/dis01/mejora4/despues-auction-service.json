@@ -1,0 +1,24 @@
+{
+  "app": "auction-service",
+  "resources": {
+    "cpu": 1.0,
+    "ephemeralStorage": "4Gi",
+    "memory": "2Gi"
+  },
+  "scale": {
+    "cooldownPeriod": null,
+    "maxReplicas": 2,
+    "minReplicas": 2,
+    "pollingInterval": null,
+    "rules": [
+      {
+        "http": {
+          "metadata": {
+            "concurrentRequests": "20"
+          }
+        },
+        "name": "http-concurrency"
+      }
+    ]
+  }
+}

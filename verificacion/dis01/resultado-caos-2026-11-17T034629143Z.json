@@ -1,0 +1,221 @@
+{
+  "subasta": "e4199306-d6b9-4928-b0a9-d089a8ae583b",
+  "inicio": "2026-11-17T03:46:29.143Z",
+  "falla": "2026-11-17T03:46:59.144Z",
+  "victimas": [
+    {
+      "app": "auction-service",
+      "victima": "auction-service--latest-13515099-24cd-4ba4-af14-a8776a914985",
+      "reiniciosAntes": 5
+    },
+    {
+      "app": "realtime-gateway",
+      "victima": "realtime-gateway--latest-a076f74d-1f67-4953-b792-f38bc5e5e2a0",
+      "reiniciosAntes": 5
+    }
+  ],
+  "clientes": 60,
+  "pujasPorSegundo": 5,
+  "enviadas": 599,
+  "rechazadasPropias": 331,
+  "pujasAceptadas": 177,
+  "pujasAceptadasPerdidas": [],
+  "pujasFantasma": [],
+  "pujasSinRespuesta": 91,
+  "rest": {
+    "muestras": 227,
+    "errores": 0,
+    "en30sTrasFalla": {
+      "muestras": 60,
+      "errores": 0,
+      "porcentaje": 0,
+      "latenciaP95Ms": 1447,
+      "latenciaMaximaMs": 2815
+    },
+    "codigos": {
+      "200": 227
+    }
+  },
+  "websocket": {
+    "cortados": 13,
+    "reconexionMaximaMs": 2603,
+    "reconexiones": [
+      {
+        "usuario": "0e689199-23e4-570f-a605-3043c40ef83b",
+        "cerradaEn": "2026-11-17T03:47:07.476Z",
+        "abiertaEn": "2026-11-17T03:47:08.074Z",
+        "ms": 598,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "cba1d25a-c739-5a56-aa85-793f428969b6",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:08.220Z",
+        "ms": 745,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "fb8a54a4-249f-589a-b83f-13c25633097c",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:08.229Z",
+        "ms": 754,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "6f1bd591-0337-5cc5-89ad-293205248f53",
+        "cerradaEn": "2026-11-17T03:47:07.476Z",
+        "abiertaEn": "2026-11-17T03:47:08.241Z",
+        "ms": 765,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "edcb915f-194c-5979-b976-7845bf1ab552",
+        "cerradaEn": "2026-11-17T03:47:07.473Z",
+        "abiertaEn": "2026-11-17T03:47:08.257Z",
+        "ms": 784,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "056da4ed-7a36-504c-bfe8-1dc61d1db6aa",
+        "cerradaEn": "2026-11-17T03:47:07.473Z",
+        "abiertaEn": "2026-11-17T03:47:08.276Z",
+        "ms": 803,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "926b641b-9af4-54ba-9dd0-0dc40b80d911",
+        "cerradaEn": "2026-11-17T03:47:07.476Z",
+        "abiertaEn": "2026-11-17T03:47:08.277Z",
+        "ms": 801,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "c970063f-0a2d-5240-8c84-46ae173b0043",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:08.277Z",
+        "ms": 802,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "c211ab36-fa27-5cfb-9bae-ec3d4fe62acd",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:08.283Z",
+        "ms": 808,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "196a33ac-7698-51b0-82d4-8bc37115666f",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:08.312Z",
+        "ms": 837,
+        "codigo": 1006,
+        "intentos": []
+      },
+      {
+        "usuario": "c8e480e1-e486-563c-8bfe-53b49338c9f1",
+        "cerradaEn": "2026-11-17T03:47:07.475Z",
+        "abiertaEn": "2026-11-17T03:47:10.038Z",
+        "ms": 2563,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:47:07.684Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1765
+          }
+        ]
+      },
+      {
+        "usuario": "8155ff34-3728-53db-a23c-aa5cd7d3db24",
+        "cerradaEn": "2026-11-17T03:47:07.473Z",
+        "abiertaEn": "2026-11-17T03:47:10.048Z",
+        "ms": 2575,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:47:07.682Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1760
+          }
+        ]
+      },
+      {
+        "usuario": "4aced362-402f-55f5-b9a6-8ba415ca7d20",
+        "cerradaEn": "2026-11-17T03:47:07.476Z",
+        "abiertaEn": "2026-11-17T03:47:10.079Z",
+        "ms": 2603,
+        "codigo": 1006,
+        "intentos": [
+          {
+            "en": "2026-11-17T03:47:07.732Z",
+            "fase": "conexion",
+            "motivo": "no abrió en 1500 ms",
+            "ms": 1773
+          }
+        ]
+      }
+    ],
+    "erroresDeConexion": 3,
+    "mensajesError": 91,
+    "fallosPorMotivo": {
+      "conexion · no abrió en 1500 ms": 3
+    },
+    "intentosFallidos": [
+      {
+        "usuario": "8155ff34-3728-53db-a23c-aa5cd7d3db24",
+        "en": "2026-11-17T03:47:07.682Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1760
+      },
+      {
+        "usuario": "c8e480e1-e486-563c-8bfe-53b49338c9f1",
+        "en": "2026-11-17T03:47:07.684Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1765
+      },
+      {
+        "usuario": "4aced362-402f-55f5-b9a6-8ba415ca7d20",
+        "en": "2026-11-17T03:47:07.732Z",
+        "fase": "conexion",
+        "motivo": "no abrió en 1500 ms",
+        "ms": 1773
+      }
+    ]
+  },
+  "reposicion": {
+    "observadaEn": "2026-11-17T03:48:52.852Z",
+    "replicas": {
+      "auction": {
+        "auction-service--latest-13515099-24cd-4ba4-af14-a8776a914985": 6,
+        "auction-service--latest-0c7670f5-4b18-4428-8723-13652d83b946": 0,
+        "auction-service--latest-7ac221e5-b641-4193-8daf-6debbe53722c": 0,
+        "auction-service--latest-5394b38d-a490-4ad4-96b5-d37cbce222f0": 0
+      },
+      "realtime": {
+        "realtime-gateway--latest-a076f74d-1f67-4953-b792-f38bc5e5e2a0": 6,
+        "realtime-gateway--latest-1bffcad5-cf00-4280-867b-aa4fc0f625f7": 0,
+        "realtime-gateway--latest-153ae834-30b4-4f70-ad95-17129336e409": 0,
+        "realtime-gateway--latest-42fa5f02-dd86-4579-b722-ac33bd856764": 0
+      }
+    }
+  },
+  "criterios": {
+    "Errores REST en los 30 s tras la falla < 2 %": true,
+    "Reconexión WebSocket < 10 s": true,
+    "0 pujas aceptadas perdidas": true,
+    "Réplicas repuestas (2 por servicio, sin la caída)": true
+  }
+}

@@ -1,0 +1,2 @@
+Credenciales cargadas (longitudes): auction 24, wallet 24
+{"subasta": "3e6ba9b6-5e7a-42b3-8dac-9bb51fa90799", "estado": "FINALIZADA", "conGanador": true, "eventosDeCierre": 1, "movimientosWallet": {"ABONO_VENTA": 1, "COBRO": 1}, "cumple": true}

@@ -1,0 +1,1 @@
+El clasificador auxiliar original rechazo por error las fechas ISO con guiones. Se conservaron tres corridas con reinicios y cierre/cobro/abono confirmados y se detuvo el bucle para evitar repeticiones innecesarias. Los resultados del generador no fueron modificados.

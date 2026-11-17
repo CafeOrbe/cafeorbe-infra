@@ -1,0 +1,24 @@
+[
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 3,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-40914a89-aff7-4d52-bba5-1d74f16acc6d"
+  },
+  {
+    "containers": [
+      {
+        "name": "auction-service",
+        "ready": true,
+        "restarts": 0,
+        "state": "Running"
+      }
+    ],
+    "name": "auction-service--latest-c42f1abe-8dea-4039-a737-65a1594fc008"
+  }
+]
