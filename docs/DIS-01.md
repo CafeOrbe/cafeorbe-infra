@@ -34,14 +34,18 @@ simultáneamente; las 60 muestras informan la distribución, sin certificar equi
 
 ## Tácticas aplicadas
 
+**Restricción tecnológica: balanceador de carga NGINX propio (`cafeorbe-lb`).** El navegador solo habla con el
+balanceador, que reparte REST entre dos instancias de api-gateway y WebSocket entre dos instancias de
+realtime-gateway, saca a la instancia que falla y reenvía la petición a la otra. Configuración, despliegue y
+pruebas en [BALANCEADOR.md](BALANCEADOR.md).
+
 ```mermaid
 flowchart LR
-    web[Frontend en Vercel] --> lb1[Ingress API]
-    lb1 --> api[api-gateway: 2 a 4 réplicas]
+    web[Frontend en Vercel] --> nginx[Balanceador NGINX cafeorbe-lb]
+    nginx --> api[api-gateway A y B: 2 a 4 réplicas cada una]
     api --> lb2[Ingress auction]
     lb2 --> au[auction-service: 4 a 6 réplicas]
-    web --> lb3[Ingress WebSocket]
-    lb3 --> rt[realtime-gateway: 4 a 6 réplicas]
+    nginx --> rt[realtime-gateway A: 4 a 6 réplicas · B: 2 a 4]
     au --> pg[(PostgreSQL)]
     au --> mq[(RabbitMQ)]
     mq --> rt
@@ -50,6 +54,7 @@ flowchart LR
 
 | Riesgo | Táctica |
 |---|---|
+| Una instancia de entrada deja de responder | El balanceador NGINX la saca tras 2 fallos en 15 s y reenvía la petición a la otra instancia (lecturas también ante tiempo agotado). |
 | Una réplica deja de responder | Sondas HTTP de startup, liveness y readiness (cada 2 s, 2 fallos). En Express se observó tráfico hacia contenedores que reiniciaban pese a las sondas; las cuatro réplicas base conservan tres sanas al caer una. |
 | Un despliegue cierra WebSockets | Realtime envía cierre 1012; el navegador reconecta con espera y variación aleatoria. |
 | Los clientes de realtime quedan repartidos | Redis Pub/Sub difunde cada evento a todas las réplicas. |

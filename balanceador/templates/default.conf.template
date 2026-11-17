@@ -1,0 +1,124 @@
+# CaféOrbe · balanceador de carga NGINX (restricción tecnológica de DIS-01)
+#
+# Reparte el tráfico del navegador entre dos instancias independientes de cada servicio de entrada:
+#   REST       →  api-gateway       (A)  y  api-gateway-b       (B)
+#   WebSocket  →  realtime-gateway  (A)  y  realtime-gateway-b  (B)
+#
+# Algoritmo: reparto uniforme por petición (split_clients sobre $request_id: 50 % a cada instancia).
+# Salud pasiva: tras 2 fallos de conexión en 15 s la instancia queda fuera durante 15 s y su parte del
+# tráfico pasa a la otra (error_page → @..._otra). Una petición POST/PUT/DELETE solo se reenvía a la otra
+# instancia si la primera no la recibió (502/503); ante un tiempo agotado (504) solo se reintentan las
+# lecturas, para no duplicar escrituras.
+#
+# Cada instancia es una Container App con su propio nombre de host, así que el host (Host y SNI) se fija
+# por instancia con un map: por eso hay un upstream por instancia en lugar de uno con dos servidores.
+# Los valores ${API_A_HOST}, ${API_B_HOST}, ${WS_A_HOST} y ${WS_B_HOST} los pone el entrypoint oficial
+# de la imagen nginx (envsubst) al arrancar.
+
+upstream api_a { server ${API_A_HOST}:443 max_fails=2 fail_timeout=15s; keepalive 16; }
+upstream api_b { server ${API_B_HOST}:443 max_fails=2 fail_timeout=15s; keepalive 16; }
+upstream ws_a  { server ${WS_A_HOST}:443  max_fails=2 fail_timeout=15s; }
+upstream ws_b  { server ${WS_B_HOST}:443  max_fails=2 fail_timeout=15s; }
+
+split_clients "${request_id}" $api_inst { 50% a; * b; }
+split_clients "${request_id}" $ws_inst  { 50% a; * b; }
+
+map $api_inst $api_otra  { a b; b a; }
+map $ws_inst  $ws_otra   { a b; b a; }
+
+map $api_inst $api_host      { a ${API_A_HOST}; b ${API_B_HOST}; }
+map $api_inst $api_host_otra { a ${API_B_HOST}; b ${API_A_HOST}; }
+map $ws_inst  $ws_host       { a ${WS_A_HOST};  b ${WS_B_HOST}; }
+map $ws_inst  $ws_host_otra  { a ${WS_B_HOST};  b ${WS_A_HOST}; }
+
+map $http_upgrade $connection_upgrade { default upgrade; '' close; }
+
+# SEG-04: se registra la ruta ($uri) y nunca la cadena de consulta, donde viaja el ticket del WebSocket.
+log_format cafeorbe escape=json
+  '{"time":"$time_iso8601","logger_name":"cafeorbe.balanceador","metodo":"$request_method","ruta":"$uri",'
+  '"estado":$status,"instancia":"$instancia","upstream":"$upstream_addr","upstream_estado":"$upstream_status",'
+  '"duracion_s":$request_time,"correlationId":"$http_x_correlation_id","ip":"$http_x_forwarded_for"}';
+
+server {
+  listen 8080;
+  server_tokens off;
+  access_log /dev/stdout cafeorbe;
+  client_max_body_size 10m;
+
+  proxy_http_version 1.1;
+  proxy_ssl_server_name on;
+  proxy_connect_timeout 2s;
+  proxy_intercept_errors on;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header X-Forwarded-Proto https;
+
+  set $instancia "";
+
+  # Sondas de Azure Container Apps para el propio balanceador.
+  location = /lb/salud {
+    access_log off;
+    default_type text/plain;
+    return 200 "UP\n";
+  }
+
+  # ---------- WebSocket: realtime-gateway A / B ----------
+  location /ws/ {
+    set $instancia "realtime-$ws_inst";
+    proxy_pass https://ws_$ws_inst;
+    proxy_ssl_name $ws_host;
+    proxy_set_header Host $ws_host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    add_header X-CafeOrbe-Instancia $instancia always;
+    error_page 502 503 504 = @ws_otra;
+  }
+
+  location @ws_otra {
+    set $instancia "realtime-$ws_otra";
+    proxy_pass https://ws_$ws_otra;
+    proxy_ssl_name $ws_host_otra;
+    proxy_set_header Host $ws_host_otra;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+    add_header X-CafeOrbe-Instancia $instancia always;
+  }
+
+  # ---------- REST: api-gateway A / B ----------
+  location / {
+    set $instancia "api-$api_inst";
+    proxy_pass https://api_$api_inst;
+    proxy_ssl_name $api_host;
+    proxy_set_header Host $api_host;
+    proxy_set_header Connection "";
+    proxy_read_timeout 30s;
+    add_header X-CafeOrbe-Instancia $instancia always;
+    error_page 502 503 = @api_otra;
+    error_page 504 = @api_otra_lectura;
+  }
+
+  location @api_otra {
+    set $instancia "api-$api_otra";
+    proxy_pass https://api_$api_otra;
+    proxy_ssl_name $api_host_otra;
+    proxy_set_header Host $api_host_otra;
+    proxy_set_header Connection "";
+    proxy_read_timeout 30s;
+    add_header X-CafeOrbe-Instancia $instancia always;
+  }
+
+  # Tiempo agotado: la primera instancia pudo haber procesado la petición; solo se reintentan lecturas.
+  location @api_otra_lectura {
+    if ($request_method !~ ^(GET|HEAD|OPTIONS)$) { return 504; }
+    set $instancia "api-$api_otra";
+    proxy_pass https://api_$api_otra;
+    proxy_ssl_name $api_host_otra;
+    proxy_set_header Host $api_host_otra;
+    proxy_set_header Connection "";
+    proxy_read_timeout 30s;
+    add_header X-CafeOrbe-Instancia $instancia always;
+  }
+}
