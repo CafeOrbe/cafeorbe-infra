@@ -83,3 +83,13 @@ Simulación con la mitad de los intentos colgados y apertura en ≈ 0,2 s (lo me
 | Mejora 5 (ventana de 10 s, límite 0,8 s) | 0,5 s | 6,6 s | 0,09 % | 2,4 % |
 
 Para cerrar DIS-01: integrar los dos cambios, esperar el despliegue de web y repetir la corrida de caos (`preparar-ren01.mjs`, `caos-bajo-carga.mjs` y `verificar-cierre.sh`).
+
+## Corridas del 17 nov con la mejora 5
+
+**Subasta 5e43078f, falla 00:08:11 UTC (auction y realtime).** REST 0 % de errores en 30 s (69 consultas, p95 618 ms), 0 pujas perdidas y 0 fantasma (152 aceptadas), réplicas repuestas a las 00:09:59 y `verificar-cierre.sh`: FINALIZADA, 1 cierre, 1 COBRO, 1 ABONO_VENTA. Reconexión: 24 de 25 en menos de 7 s (15 en ≈ 0,37 s, 8 en ≈ 3,5 s) y **1 en 10,06 s** ❌. El tablero técnico marcó la caída a los ≈ 22 s del último envío (infra #13).
+
+**Falla 00:47:42 UTC (solo realtime: el `exec` en auction devolvió InternalServerError de Azure).** Con el registro de intentos (infra #14): los 39 intentos fallidos fueron de **conexión** ("no abrió a tiempo"), ninguno del ticket. Los dos clientes más lentos (10,06 y 9,72 s) tenían el límite para abrir en 3000 y 2883 ms porque su primera conexión fue lenta (los 60 entran a la vez al empezar): cada intento colgado en la réplica caída les costó ≈ 3 s, y tres seguidos ya suman 9–10 s. REST 0 % (91 consultas, p95 181 ms); 0 pujas perdidas, 0 fantasma y 0 sin respuesta.
+
+### Mejora 6: tope de 1,5 s para el límite dentro de la ventana rápida
+
+En `cafeorbe-web` (`salaSocket.ts`) y en `caos-bajo-carga.mjs`: durante los primeros 10 s tras el corte, el límite para abrir es el adaptativo pero **nunca más de 1,5 s**; pasada la ventana vuelve a valer completo (hasta 3 s), para que una red de verdad lenta termine conectando. Cada intento colgado cuesta ≤ 1,7 s dentro de la ventana y caben al menos 5 en 10 s; con el límite de 3 s del 17 nov, tres intentos colgados pasan de ≈ 10 s a menos de 6 s (prueba automática en `salaSocket.test.ts`).

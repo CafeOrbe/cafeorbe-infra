@@ -44,12 +44,14 @@ async function rest(ruta, token, tope = 10_000) {
 
 // DIS-01: misma política de reconexión que cafeorbe-web (src/shared/ws/salaSocket.ts). Con otra política el script
 // mediría un cliente distinto del que usan los compradores.
-//   - Límite para abrir: 3 veces lo que tardó la última conexión buena, entre 0,8 y 3 s (1,5 s antes de la primera).
+//   - Límite para abrir: 3 veces lo que tardó la última conexión buena, entre 0,8 y 3 s (1,5 s antes de la primera),
+//     y nunca más de 1,5 s dentro de la ventana rápida (corrida del 17 nov: con 3 s, 3 intentos colgados = 10 s).
 //   - Durante los primeros 10 s tras el corte se reintenta cada 200 ms; después 1 s, 2 s, 4 s… hasta 10 s.
 //   - Hasta 30 % aleatorio sobre cada espera.
 const ESPERA_CONEXION_MS = 1_500
 const ESPERA_CONEXION_MIN_MS = 800
 const ESPERA_CONEXION_MAX_MS = 3_000
+const ESPERA_CONEXION_VENTANA_MAX_MS = 1_500
 const FACTOR_ESPERA_CONEXION = 3
 const VENTANA_RAPIDA_MS = 10_000
 const ESPERA_REINTENTO_RAPIDO_MS = 200
@@ -107,9 +109,11 @@ function cliente(c) {
         const url = `${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`
         fase = 'conexion'
         const abriendoDesde = ahora()
+        const enVentana = estado.desconectadoDesde !== null && abriendoDesde - estado.desconectadoDesde < VENTANA_RAPIDA_MS
+        const msLimite = enVentana ? Math.min(estado.esperaConexion, ESPERA_CONEXION_VENTANA_MAX_MS) : estado.esperaConexion
         ws = new WebSocket(url)
         await new Promise((ok, mal) => {
-          const limite = setTimeout(() => mal(new Error(`no abrió en ${estado.esperaConexion} ms`)), estado.esperaConexion)
+          const limite = setTimeout(() => mal(new Error(`no abrió en ${msLimite} ms`)), msLimite)
           ws.onopen = () => { clearTimeout(limite); estado.esperaConexion = esperaConexionTras(ahora() - abriendoDesde); ok() }
           ws.onerror = () => { clearTimeout(limite); mal(new Error('error de conexión')) }
           ws.onclose = (e) => { clearTimeout(limite); mal(new Error(`cerrada al abrir (${e?.code ?? '?'})`)) }
