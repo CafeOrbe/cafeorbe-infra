@@ -356,3 +356,21 @@ Con 0,5 vCPU, auction volvió a observarse lista a los **56.0–59.5 s** y realt
 La comparación modifica CPU, memoria por réplica y cantidad de réplicas conjuntamente, manteniendo la capacidad total asignada; no permite aislar el efecto individual de cada factor. Tres repeticiones no garantizan el resultado de todas las fallas futuras, ni demuestran que el ingreso haya dejado de dirigir tráfico a contenedores que reinician.
 
 **Configuración final vigente:** `auction-service` y `realtime-gateway` quedan con **4 réplicas fijas de 0,5 vCPU / 1 GiB cada una**, por la autorización del operador para esta prueba. La comprobación final confirma cuatro réplicas listas y readiness UP por app. Evidencia en [`mejora4-4replicas/readiness-final.json`](mejora4-4replicas/readiness-final.json), `final-{app}.json` y `replicas-final-{app}.json`. Los snapshots `antes-{app}.json` conservan la configuración de dos réplicas de 1 vCPU; el estado original de 0,25 vCPU sigue conservado en la etapa anterior y en `~/.cafeorbe-ren01-estado` de Cloud Shell. No se ejecutó restauración.
+
+## Duración de las próximas corridas: 3 minutos por subasta
+
+Por indicación del operador, las próximas preparaciones de DIS-01 usan **3 minutos por subasta**:
+
+```bash
+cd ~/cafeorbe-infra/verificacion/ren01
+node preparar-ren01.mjs --compradores 60 --minutos 3
+export REN01_SUBASTA=$(cat .subasta-ren01)
+cd ../dis01
+node caos-bajo-carga.mjs
+# Al cerrar la subasta:
+bash verificar-cierre.sh "$REN01_SUBASTA"
+```
+
+Se conservan los 30 s previos a la falla y los 90 s posteriores. En las seis corridas documentadas, esa carga habría terminado antes de un cierre a los 3 minutos; las consultas de reposición y la verificación de cierre pueden finalizar después. La duración total incluye además preparación y consultas de Azure. Cada tanda debe guardar su evidencia en un directorio nuevo.
+
+Los resultados históricos de este documento corresponden a subastas de 10 minutos; no se han repetido todavía con 3 minutos. Este parámetro se pasa explícitamente para DIS-01 y no cambia el valor predeterminado de preparación de REN-01.
