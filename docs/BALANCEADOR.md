@@ -123,5 +123,10 @@ y se reaplicó la configuración del ingreso externo HTTP en el puerto 8082. El
 también registró 12 respuestas HTTP 502. El ingreso devolvió `Failed to resolve route` y la revisión seguía
 con cero réplicas. La causa del fallo de aprovisionamiento queda sin confirmar.
 
+Desde una réplica sana de Wallet en `cafeorbe-prod`, PostgreSQL de PROD resolvió por DNS y aceptó conexiones
+TCP al puerto 5432. Con el usuario y la contraseña configurados en Auction, una conexión JDBC con TLS a
+`auction_db` ejecutó correctamente `SELECT 1, current_database()`. La comprobación valida la red del ambiente,
+la autenticación y el acceso a la base de datos.
+
 El tráfico sigue en QA. Antes de cambiarlo se requiere readiness `UP` de Auction y una prueba de humo
 exitosa. Las mediciones anteriores corresponden a QA.
