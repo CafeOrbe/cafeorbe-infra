@@ -110,4 +110,12 @@ La prueba de REN-01 del enfoque anterior (NGINX en Container Apps, [PR #20](http
 
 ## Evidencia de PROD
 
-Los PR de configuración de despliegue y aprovisionamiento están integrados. La etiqueta `v1.0.0` se publicó en los seis repositorios. GitHub Actions espera la revisión del ambiente `PROD` antes de ejecutar `deploy-prod`. Quedan pendientes la prueba de humo, el readiness y las corridas a través del balanceador. Las mediciones anteriores corresponden a QA.
+La etiqueta `v1.0.0` disparó los seis despliegues y los seis pasaron la revisión del ambiente GitHub `PROD`.
+API Gateway, Identity, Wallet, Streaming y Realtime pasaron la prueba de humo y devolvieron `UP` en readiness.
+En la configuración desplegada se verificaron PostgreSQL, Redis y el vhost del broker propios de PROD,
+según las dependencias de cada servicio.
+
+El [primer humo de Auction](https://github.com/CafeOrbe/cafeorbe-auction-service/actions/runs/44211996988/job/134493368734)
+falló con HTTP 502 en los 12 intentos. Azure mostraba `auction-service-prod--latest` con cero réplicas
+activas y mínimo configurado de cuatro. Antes de pasar el tráfico se requiere readiness `UP` de Auction
+y repetir su prueba de humo. Las mediciones anteriores corresponden a QA.
