@@ -128,5 +128,10 @@ TCP al puerto 5432. Con el usuario y la contraseña configurados en Auction, una
 `auction_db` ejecutó correctamente `SELECT 1, current_database()`. La comprobación valida la red del ambiente,
 la autenticación y el acceso a la base de datos.
 
+En `v1.0.0`, Spring lee `DB_URL` y el workflow construye esa variable con el host de PostgreSQL de PROD.
+La configuración de Azure incluye el mismo `DB_URL` en la aplicación y en la revisión. En Log Analytics
+las referencias a `localhost:5432` recuperadas preceden al despliegue de las 01:12 UTC del 18 de noviembre.
+Falta un registro de arranque posterior al despliegue para comprobar qué URL llegó al proceso.
+
 El tráfico sigue en QA. Antes de cambiarlo se requiere readiness `UP` de Auction y una prueba de humo
 exitosa. Las mediciones anteriores corresponden a QA.
