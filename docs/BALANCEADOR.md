@@ -133,5 +133,11 @@ La configuración de Azure incluye el mismo `DB_URL` en la aplicación y en la r
 las referencias a `localhost:5432` recuperadas preceden al despliegue de las 01:12 UTC del 18 de noviembre.
 Falta un registro de arranque posterior al despliegue para comprobar qué URL llegó al proceso.
 
+La métrica de Azure Monitor `Replicas` registra cuatro réplicas hasta las 01:13 UTC y cero desde las
+01:14 UTC. El registro de actividad muestra que Azure aceptó la primera actualización a las 01:12 UTC
+(correlación `379d2f74-321c-4e2f-817a-474aae2aec06`) y el reintento a las 01:20 UTC
+(correlación `94afed3f-7d82-44d0-aef8-74efaa1524e4`). Log Analytics no devolvió registros de Auction
+desde las 01:10 UTC. La API de réplicas sigue devolviendo cero y el ingreso devuelve HTTP 502.
+
 El tráfico sigue en QA. Antes de cambiarlo se requiere readiness `UP` de Auction y una prueba de humo
 exitosa. Las mediciones anteriores corresponden a QA.
