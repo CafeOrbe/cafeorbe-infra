@@ -110,4 +110,4 @@ La prueba de REN-01 del enfoque anterior (NGINX en Container Apps, [PR #20](http
 
 ## Evidencia de PROD
 
-Los PR de configuración de despliegue y aprovisionamiento están integrados. Quedan pendientes la etiqueta `v1.0.0` en los seis repositorios, los despliegues con humo y readiness, y la prueba a través del balanceador. Las mediciones anteriores corresponden a QA.
+Los PR de configuración de despliegue y aprovisionamiento están integrados. La etiqueta `v1.0.0` se publicó en los seis repositorios. GitHub Actions espera la revisión del ambiente `PROD` antes de ejecutar `deploy-prod`. Quedan pendientes la prueba de humo, el readiness y las corridas a través del balanceador. Las mediciones anteriores corresponden a QA.
