@@ -9,13 +9,20 @@
 // INTERNAL_TOKEN (opcional): lee /actuator/prometheus de cada servicio para los p95 de SEG-01 (< 3 s) y SEG-02
 // (< 5 ms). Sin él, esas dos medidas se toman del tablero de Grafana.
 //
-// Crea dos Subastadores, dos Compradores, varios "abusadores" y una subasta de prueba de 5 minutos que cierra sola.
+// Crea usuarios y una subasta que cierra sola en 5 minutos en QA y 3 minutos en PROD.
 // Los abusadores quedan bloqueados 60 s en el realtime: son personas de prueba nuevas en cada corrida.
 import { createHmac, createSign, generateKeyPairSync } from 'node:crypto'
 import { sesionDePrueba } from './sesiones-de-prueba.mjs'
 
 const API = process.env.API_URL ?? 'http://localhost:8080'
 const WS = process.env.WS_URL ?? 'ws://localhost:8085'
+const AMBIENTE = process.env.CAFEORBE_AMBIENTE
+if (AMBIENTE && !['qa', 'prod'].includes(AMBIENTE)) throw new Error('CAFEORBE_AMBIENTE debe ser qa o prod')
+if (AMBIENTE === 'prod' && (
+  API !== 'https://cafeorbe-lb.eastus2.cloudapp.azure.com' ||
+  WS !== 'wss://cafeorbe-lb.eastus2.cloudapp.azure.com'
+)) throw new Error('La prueba de seguridad en PROD requiere las URL del balanceador')
+const DURACION_MINUTOS = AMBIENTE === 'prod' ? 3 : 5
 const INTERNAL_TOKEN = process.env.INTERNAL_TOKEN
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID ?? '913806154996-u2kknfknc1lv5bg6qrmtsa34ioc9jg2t.apps.googleusercontent.com'
 const sufijo = Date.now().toString(36)
@@ -88,10 +95,14 @@ async function medirPujas(sala, cantidad, montoInicial) {
 // ── Métricas de /actuator/prometheus (solo con INTERNAL_TOKEN) ────────────────────────────────────────
 const PUERTOS_LOCALES = { 'api-gateway': 8080, 'identity-service': 8081, 'auction-service': 8082, 'wallet-service': 8083,
   'streaming-service': 8084, 'realtime-gateway': 8085 }
-/** En Azure cada servicio es la URL del gateway con otro nombre; en local, otro puerto (cafeorbe-infra). */
-const urlDe = (servicio) => API.includes('api-gateway')
-  ? API.replace('api-gateway', servicio)
-  : API.replace(/:\d+$/, `:${PUERTOS_LOCALES[servicio]}`)
+/** Usa el ingreso directo para comprobar la protección de cada servicio y leer sus métricas. */
+function urlDe(servicio) {
+  if (AMBIENTE === 'prod') return `https://${servicio}-prod.thankfulmoss-4f48ec41.eastus2.azurecontainerapps.io`
+  if (AMBIENTE === 'qa') return `https://${servicio}.blackbay-48700ead.eastus2.azurecontainerapps.io`
+  return API.includes('api-gateway')
+    ? API.replace('api-gateway', servicio)
+    : API.replace(/:\d+$/, `:${PUERTOS_LOCALES[servicio]}`)
+}
 async function metricas(servicio) {
   const r = await fetch(`${urlDe(servicio)}/actuator/prometheus`, { headers: { 'X-Internal-Token': INTERNAL_TOKEN } })
   if (!r.ok) throw new Error(`${servicio}: HTTP ${r.status} al leer /actuator/prometheus (¿INTERNAL_TOKEN correcto?)`)
@@ -391,7 +402,7 @@ async function main() {
     token: gente.luis.token,
     cuerpo: { nombre: `Seguridad ${sufijo}`, descripcion: 'Prueba de SEG-01 a SEG-03', fechaInicio: new Date(Date.now() + 30 * 60_000).toISOString() },
   })).id
-  const reglas = { duracionMinutos: 5, precioBase: 100, incrementoMinimo: 10 }
+  const reglas = { duracionMinutos: DURACION_MINUTOS, precioBase: 100, incrementoMinimo: 10 }
   await exigirOk('PUT', `/api/subastas/${subasta}/reglas`, { token: gente.luis.token, cuerpo: reglas })
 
   await seg02(gente, subasta, reglas)
@@ -409,7 +420,7 @@ async function main() {
   await medidasDeMetricas(gente)
 
   console.log(`\n${fallas === 0 ? 'SEG-01, SEG-02 y SEG-03 cumplen en este ambiente' : `${fallas} comprobación(es) fallida(s)`}`)
-  console.log(`Subasta de prueba ${subasta}: cierra sola en 5 min.`)
+  console.log(`Subasta de prueba ${subasta}: cierra sola en ${DURACION_MINUTOS} min.`)
   console.log('Registro de los intentos (Log Analytics): ContainerAppConsoleLogs_CL | extend j = parse_json(Log_s)'
     + ' | where tostring(j.logger_name) == "cafeorbe.seguridad" | summarize count() by tostring(j.evento), tostring(j.motivo)')
   process.exit(fallas === 0 ? 0 : 1)

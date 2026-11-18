@@ -1,4 +1,4 @@
-"""DIS-01: tras el cierre de la subasta, exactamente un cierre (auction) y un cobro (wallet). Solo lectura.
+"""DIS-01: tras el cierre, un evento de cierre y, si hubo ganador, un cobro y un abono. Solo lectura.
    PGHOST/PGUSER/PGPASSWORD de auction y WPGUSER/WPGPASSWORD de wallet por entorno; nunca se imprimen.
    python3 verificar-cierre.py <subastaId>"""
 import os, sys, ssl, json
@@ -33,7 +33,9 @@ finally:
 
 r = {'subasta': sid, 'estado': estado[0][0] if estado else None, 'conGanador': bool(estado and estado[0][1]),
      'eventosDeCierre': cierres, 'movimientosWallet': {t: n for t, n in movs}}
+movimientos_esperados = 1 if r['conGanador'] else 0
 r['cumple'] = (r['estado'] in ('FINALIZADA', 'DESIERTA') and cierres == 1
-               and (not r['conGanador'] or (r['movimientosWallet'].get('COBRO') == 1)))
+               and r['movimientosWallet'].get('COBRO', 0) == movimientos_esperados
+               and r['movimientosWallet'].get('ABONO_VENTA', 0) == movimientos_esperados)
 print(json.dumps(r, ensure_ascii=False))
 sys.exit(0 if r['cumple'] else 1)
