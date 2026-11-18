@@ -117,5 +117,11 @@ según las dependencias de cada servicio.
 
 El [primer humo de Auction](https://github.com/CafeOrbe/cafeorbe-auction-service/actions/runs/44211996988/job/134493368734)
 falló con HTTP 502 en los 12 intentos. Azure mostraba `auction-service-prod--latest` con cero réplicas
-activas y mínimo configurado de cuatro. Antes de pasar el tráfico se requiere readiness `UP` de Auction
-y repetir su prueba de humo. Las mediciones anteriores corresponden a QA.
+activas y mínimo configurado de cuatro. Se detuvo y se inició la app, se ejecutó de nuevo el mismo workflow
+y se reaplicó la configuración del ingreso externo HTTP en el puerto 8082. El
+[segundo humo](https://github.com/CafeOrbe/cafeorbe-auction-service/actions/runs/44211996988/job/134502297196)
+también registró 12 respuestas HTTP 502. El ingreso devolvió `Failed to resolve route` y la revisión seguía
+con cero réplicas. La causa del fallo de aprovisionamiento queda sin confirmar.
+
+El tráfico sigue en QA. Antes de cambiarlo se requiere readiness `UP` de Auction y una prueba de humo
+exitosa. Las mediciones anteriores corresponden a QA.
