@@ -44,9 +44,10 @@ configurar() {
 
   # Escalado: el ambiente express solo admite la regla HTTP (las reglas de CPU o TCP se rechazan con
   # ExpressCustomScaleRulesNotSupported). La CPU tampoco distingue la carga normal de la duplicada (12-20 % en las
-  # dos, 19 nov): el límite es PostgreSQL y el bloqueo de la fila. Lo que sí crece es la concurrencia en auction:
-  # cada puja llega de realtime como POST y, con la carga duplicada, hace fila en el bloqueo. Con 20 pujas/s hay
-  # unas 3 peticiones concurrentes por réplica; el umbral de auction es 10 para que la carga duplicada escale.
+  # dos, 19 nov): el límite es PostgreSQL y el bloqueo de la fila. En las pruebas la regla HTTP de Azure se comportó
+  # como peticiones por segundo por réplica: cada puja llega a auction como un POST de realtime. Con REN-01 (20/s)
+  # y umbral 12 quedan 2 réplicas (20/12 < 2); con la carga duplicada (40/s) sube a 3-4. Con 10, la carga normal
+  # también escalaba; con 20, la duplicada no.
   # Readiness cada 2 s y 2 fallos. En Express se observó tráfico hacia contenedores que
   # reiniciaban pese a estas sondas; con dos réplicas base queda una sana durante la caída y el escalado repone la otra.
   jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" \
@@ -60,7 +61,7 @@ configurar() {
     | if $servicio == "auction-service" then
         .properties.template.containers[0].env = (
           (.properties.template.containers[0].env // [] | map(select(.name != "DB_POOL_MAX")))
-          + [{"name": "DB_POOL_MAX", "value": "2"}]
+          + [{"name": "DB_POOL_MAX", "value": "4"}]
         )
       else . end
     | .properties.template.scale.rules = [
@@ -108,7 +109,7 @@ configurar() {
 }
 
 configurar api-gateway 8080 2 4 20
-configurar auction-service 8082 2 4 10
+configurar auction-service 8082 2 4 12
 configurar realtime-gateway 8085 2 4 20
 
 echo "✓ DIS-01 configurado en $AMBIENTE. Ejecuta scripts/dis-01-verificar.sh $AMBIENTE para reunir evidencia."

@@ -113,14 +113,14 @@ class Topologia(unittest.TestCase):
                 expected = (2, 4)
                 self.assertEqual((scale["minReplicas"], scale["maxReplicas"]), expected)
                 self.assertEqual(scale["cooldownPeriod"], 300)
-                # El ambiente express solo admite la regla HTTP; auction escala antes (10) porque las pujas hacen fila ahí.
+                # El ambiente express solo admite la regla HTTP; auction escala con 12 (carga normal 20/s, duplicada 40/s).
                 self.assertEqual(scale["rules"], [{"name": "http-concurrency", "http": {"metadata": {
-                    "concurrentRequests": "10" if service == "auction-service" else "20"}}}])
+                    "concurrentRequests": "12" if service == "auction-service" else "20"}}}])
                 container = template["containers"][0]
                 old = before["properties"]["template"]["containers"][0]
                 for field in ("image", "name"):
                     self.assertEqual(container[field], old[field])
-                expected_env = old["env"] if service != "auction-service" else [x for x in old["env"] if x["name"] != "DB_POOL_MAX"] + [{"name": "DB_POOL_MAX", "value": "2"}]
+                expected_env = old["env"] if service != "auction-service" else [x for x in old["env"] if x["name"] != "DB_POOL_MAX"] + [{"name": "DB_POOL_MAX", "value": "4"}]
                 self.assertEqual(container["env"], expected_env)
                 self.assertEqual(data["properties"]["configuration"], before["properties"]["configuration"])
                 self.assertEqual(container["resources"]["ephemeralStorage"], "1Gi")
@@ -179,7 +179,7 @@ class Topologia(unittest.TestCase):
                 self.assertEqual(template["containers"][0]["resources"]["cpu"], 0.5)
                 self.assertEqual(template["containers"][0]["resources"]["memory"], "1Gi")
                 if service == "auction-service":
-                    self.assertEqual([x for x in template["containers"][0]["env"] if x["name"] == "DB_POOL_MAX"], [{"name": "DB_POOL_MAX", "value": "2"}])
+                    self.assertEqual([x for x in template["containers"][0]["env"] if x["name"] == "DB_POOL_MAX"], [{"name": "DB_POOL_MAX", "value": "4"}])
             else:
                 self.assertEqual(template["containers"][0]["resources"], self.original[service]["properties"]["template"]["containers"][0]["resources"])
 

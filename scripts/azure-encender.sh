@@ -30,7 +30,7 @@ echo "→ Auction y realtime: 0,5 vCPU / 1 GiB, mínimo 2, máximo 4 (DIS-01)...
 for app in $APPS_DIS01; do
   echo "  · $app → mínimo 2, máximo 4"
   opciones_pool=()
-  if [[ "$app" == auction-service ]]; then opciones_pool=(--set-env-vars DB_POOL_MAX=2); fi
+  if [[ "$app" == auction-service ]]; then opciones_pool=(--set-env-vars DB_POOL_MAX=4 OUTBOX_INTERVALO_MS=500); fi
   az containerapp update -n "$app" -g "$RG" --cpu 0.5 --memory 1Gi --min-replicas 2 --max-replicas 4 "${opciones_pool[@]}" --only-show-errors
 done
 
