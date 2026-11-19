@@ -6,10 +6,12 @@
 # mismas medidas del PDF, para verlo en tiempo real.
 #
 #   ./verificacion/demo/demo.sh preparar    # ANTES de la presentación (~8 min): 400 compradores con Orbes y subasta
+#   ./verificacion/demo/demo.sh renovar     # si la subasta de carga venció: otra en segundos, mismos compradores
 #   ./verificacion/demo/demo.sh seg         # SEG-01/02/03 · ~1 min
-#   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 2 min
+#   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 75 s (~2 min 40 s)
 #   ./verificacion/demo/demo.sh caos        # DIS-01: cae 1 de 2 réplicas de auction y de realtime · ~2,5 min
-#   ./verificacion/demo/demo.sh escalado    # DIS-01: carga duplicada, réplicas de 2 hacia 4 · ~3 min
+#   ./verificacion/demo/demo.sh escalado    # DIS-01: carga duplicada; se detiene al escalar auction (tope 3 min)
+#   ./verificacion/demo/demo.sh balanceador # DIS-01: Load Balancer + 2 VMs NGINX; apaga la VM 1 y todo pasa por la VM 2 (~2 min)
 #   ./verificacion/demo/demo.sh cierre      # DIS-01: 1 cierre y 1 cobro de la subasta del caos (cuando cierre)
 #   ./verificacion/demo/demo.sh todo        # seg, ren, caos, escalado y cierre seguidos (~11 min)
 #
@@ -77,66 +79,148 @@ preparar() {
   echo "Listo. La subasta de carga dura 90 min: preparar como máximo 1 hora antes de la presentación."
 }
 
+# Cada paso muestra al final su duración y un veredicto; todos caben en 3 minutos.
+INICIO_PASO=0
+empezar() { INICIO_PASO=$SECONDS; negrita "$1"; }
+veredicto() { # veredicto <ok:0|1> <texto>
+  local s=$((SECONDS - INICIO_PASO))
+  if [[ "$1" == 0 ]]; then printf '\n\033[1;32m✅ %s\033[0m  (%d min %02d s)\n' "$2" $((s / 60)) $((s % 60))
+  else printf '\n\033[1;31m❌ %s\033[0m  (%d min %02d s)\n' "$2" $((s / 60)) $((s % 60)); fi
+}
+
+# Subasta de carga nueva con los mismos 400 compradores (segundos). Usar si la de 'preparar' ya venció.
+renovar() {
+  credenciales
+  leer_estado
+  negrita "Subasta de carga nueva (90 min) con los compradores ya preparados"
+  (cd "$REN" && SIN_REGISTRO=1 node preparar-ren01.mjs --compradores 400 --minutos 90 --sufijo "$SUFIJO" | tail -1)
+  cp "$REN/compradores.json" "$ESTADO/compradores-400.json"
+  cat "$REN/.subasta-ren01" > "$ESTADO/subasta-carga"
+}
+
 seg() {
   credenciales
-  negrita "SEG-01 · SEG-02 · SEG-03: tokens inválidos, matriz de permisos y abuso de pujas"
-  (cd "$RAIZ" && MUESTRAS="${MUESTRAS:-10}" SIN_REGISTRO=1 node seguridad-qa.mjs)
+  empezar "SEG-01 · SEG-02 · SEG-03: tokens inválidos, matriz de permisos y abuso de pujas"
+  local salida ok=1
+  salida=$(cd "$RAIZ" && MUESTRAS="${MUESTRAS:-10}" SIN_REGISTRO=1 node seguridad-qa.mjs 2>&1) || true
+  echo "$salida" | grep -E '^(✔|✘)|cumplen|fallida'
+  # El p95 del login con Google necesita al menos un login real en la réplica (entrar a la web antes).
+  local fallas; fallas=$(echo "$salida" | grep '^✘' | grep -vc 'aún no registra logins' || true)
+  [[ "$fallas" == 0 ]] && ok=0
+  veredicto $ok "SEG-01/02/03: $(echo "$salida" | grep -c '^✔') comprobaciones correctas, $fallas fallidas"
 }
 
 ren() {
   leer_estado
   usar_compradores 200
-  negrita "REN-01 (corto): 200 WebSocket, 20 pujas/s durante ${REN_SEGUNDOS:-120} s · p95 ≤ 800 ms, p99 ≤ 1,5 s"
-  replicas
+  local seg_carga="${REN_SEGUNDOS:-75}"
+  empezar "REN-01 (corto): 200 WebSocket, 20 pujas/s durante $seg_carga s · p95 ≤ 800 ms, p99 ≤ 1,5 s, 0 caídas"
+  rm -f "$ESTADO/ren-resultado.json"
   (cd "$REN" && REN01_SUBASTA="$SUBASTA_CARGA" node carga-sala.mjs --etapa demo --usuarios 200 --tasa 20 \
-    --duracion "${REN_SEGUNDOS:-120}" --rampup 15 --salida "$ESTADO/ren-resultado.json" --html "$ESTADO/ren-resultado.html") \
-    | grep -E 'Progreso|RESUMEN|Conexiones|Pujas|Latencia|Eventos|Gaps|====' || true
+    --duracion "$seg_carga" --rampup 10 --salida "$ESTADO/ren-resultado.json" --html "$ESTADO/ren-resultado.html" 2>&1) \
+    | grep --line-buffered -E 'Progreso|Conexiones listas' || true
+  local p95 p99 caidas
+  read -r p95 p99 caidas <<<"$(node -e '
+    try { const r = JSON.parse(require("fs").readFileSync(process.argv[1]));
+      console.log(r.resumenLatencia.p95, r.resumenLatencia.p99, r.conexiones.desconexiones) } catch { console.log("") }' \
+    "$ESTADO/ren-resultado.json")"
   replicas
+  if [[ -n "$p95" ]] && awk -v a="$p95" -v b="$p99" -v c="$caidas" 'BEGIN{exit !(a<=800 && b<=1500 && c==0)}'; then
+    veredicto 0 "REN-01: p95 $(printf %.0f "$p95") ms · p99 $(printf %.0f "$p99") ms · $caidas caídas"
+  else
+    veredicto 1 "REN-01: p95 ${p95:-?} ms · p99 ${p99:-?} ms · ${caidas:-?} caídas"
+  fi
 }
 
 caos() {
   credenciales
   leer_estado
-  negrita "DIS-01: subasta de 3 min para el caos (compradores ya preparados)"
+  empezar "DIS-01: se detiene 1 de 2 réplicas de auction y 1 de 2 de realtime a los 15 s (mirar Grafana)"
   (cd "$REN" && SIN_REGISTRO=1 node preparar-ren01.mjs --compradores 60 --minutos 3 --sufijo "$SUFIJO" | tail -1)
   cat "$REN/.subasta-ren01" > "$ESTADO/subasta-caos"
-  negrita "DIS-01: a los 15 s se detiene 1 de 2 réplicas de auction y 1 de 2 de realtime (mirar Grafana)"
   replicas
-  (cd "$RAIZ" && REN01_SUBASTA="$(cat "$ESTADO/subasta-caos")" node dis01/caos-bajo-carga.mjs --antes 15 --despues 45 \
-    --reposicion "${REPOSICION_S:-120}") | grep -Ev '^ +[0-9]+ ms \(corte|^    '
+  local salida
+  salida=$(cd "$RAIZ" && REN01_SUBASTA="$(cat "$ESTADO/subasta-caos")" node dis01/caos-bajo-carga.mjs --antes 15 \
+    --despues 45 --reposicion "${REPOSICION_S:-90}" 2>&1)
+  echo "$salida" | grep -E '^(REST|WebSocket|Pujas):|✅|❌|Falla|Reposici'
   replicas
-  echo "La subasta del caos cierra a los 3 min de creada: después correr './verificacion/demo/demo.sh cierre'."
+  if echo "$salida" | grep -q '❌' || ! echo "$salida" | grep -q '✅'; then
+    veredicto 1 "DIS-01 caída de réplicas: algún criterio no se cumplió"
+  else
+    veredicto 0 "DIS-01 caída de réplicas: REST < 2 %, reconexión < 10 s, 0 pujas perdidas, réplicas repuestas"
+  fi
+  echo "La subasta del caos cierra a los 3 min de creada; luego: ./verificacion/demo/demo.sh cierre"
 }
 
 escalado() {
   leer_estado
   usar_compradores 400
-  negrita "DIS-01 escalado: carga duplicada (400 WebSocket, 40 pujas/s) · réplicas de 2 hacia 4"
-  replicas
-  rm -f "$ESTADO/fin-escalado"
-  ( while [[ ! -f "$ESTADO/fin-escalado" ]]; do replicas; sleep 15; done ) &
-  local observador=$!
-  (cd "$REN" && REN01_SUBASTA="$SUBASTA_CARGA" node carga-sala.mjs --etapa escalado --usuarios 400 --tasa 40 \
-    --duracion "${ESCALADO_SEGUNDOS:-150}" --rampup 30 --salida "$ESTADO/escalado.json" --html "$ESTADO/escalado.html") \
-    | grep -E 'RESUMEN|Conexiones|Pujas env|Latencia p9|====' || true
-  touch "$ESTADO/fin-escalado"
-  wait "$observador" 2>/dev/null || true
+  local tope="${ESCALADO_TOPE_S:-175}"
+  empezar "DIS-01 escalado: carga duplicada (400 WebSocket, 40 pujas/s) · auction de 2 hacia 4 réplicas"
+  (cd "$REN" && REN01_SUBASTA="$SUBASTA_CARGA" exec node carga-sala.mjs --etapa escalado --usuarios 400 --tasa 40 \
+    --duracion "$tope" --rampup 10 --salida "$ESTADO/escalado.json" --html "$ESTADO/escalado.html" \
+    > "$ESTADO/escalado.log" 2>&1) &
+  local carga=$! subasta=2 n
+  while ((SECONDS - INICIO_PASO < tope)); do
+    n=$(az containerapp replica list -g $GRUPO -n auction-service --query 'length(@)' -o tsv --only-show-errors 2>/dev/null || echo "?")
+    echo "$(date -u +%T) +$((SECONDS - INICIO_PASO)) s · auction-service=$n réplicas · $(grep -o 'WS Activos: [0-9]*' "$ESTADO/escalado.log" | tail -1)"
+    if [[ "$n" =~ ^[0-9]+$ ]] && ((n > 2)); then subasta=$n; break; fi
+    sleep 10
+  done
+  kill "$carga" 2>/dev/null || true
+  wait "$carga" 2>/dev/null || true
   usar_compradores 200
+  if ((subasta > 2)); then veredicto 0 "DIS-01 escalado: auction pasó de 2 a $subasta réplicas con la carga duplicada"
+  else veredicto 1 "DIS-01 escalado: auction no escaló en $tope s"; fi
+}
+
+# DIS-01 · balanceador de carga: Azure Load Balancer (capa 4) con 2 máquinas virtuales NGINX.
+# Diseño y creación: scripts/balanceador-azure.sh y docs/BALANCEADOR.md; NGINX: balanceador-vm/.
+LB_URL="https://cafeorbe-lb.eastus2.cloudapp.azure.com"
+reparto() { # reparto <n>: n lecturas por el balanceador; cuenta estado HTTP y VM que atendió
+  for _ in $(seq 1 "$1"); do
+    curl -s -o /dev/null -D - -m 5 "$LB_URL/actuator/health/readiness" | tr -d '\r' \
+      | awk '/^HTTP/{c=$2} tolower($1)=="x-cafeorbe-vm:"{v=$2} END{print (c?c:"sin-respuesta"), v}'
+  done | sort | uniq -c
+}
+balanceador() {
+  empezar "DIS-01 balanceador: Azure Load Balancer + 2 VMs NGINX (cafeorbe-lb-vm1 y cafeorbe-lb-vm2)"
+  az network lb show -g $GRUPO -n cafeorbe-lb --only-show-errors \
+    --query "{sku:sku.name, reglas:join(', ', loadBalancingRules[].name), sonda:join(' ', [probes[0].protocol, probes[0].requestPath, 'cada', to_string(probes[0].intervalInSeconds), 's'])}" -o table
+  az vm list -g $GRUPO -d --only-show-errors --query "[?starts_with(name,'cafeorbe-lb-vm')].{vm:name, tamano:hardwareProfile.vmSize, estado:powerState}" -o table
+  echo; echo "Reparto con las dos VMs (10 lecturas):"; reparto 10
+  echo; echo "$(date -u +%T) Apagando cafeorbe-lb-vm1 (la sonda la saca del reparto)..."
+  az vm stop -g $GRUPO -n cafeorbe-lb-vm1 --only-show-errors -o none
+  sleep 12
+  echo "$(date -u +%T) Reparto con la VM 1 apagada (10 lecturas):"
+  local salida; salida="$(reparto 10)"; echo "$salida"
+  echo "$(date -u +%T) Encendiendo cafeorbe-lb-vm1 en segundo plano (vuelve al reparto en ~1 min)"
+  az vm start -g $GRUPO -n cafeorbe-lb-vm1 --no-wait --only-show-errors -o none
+  if [[ "$(echo "$salida" | awk '$2=="200" && $3=="cafeorbe-lb-vm2"{n+=$1} END{print n+0}')" == 10 ]]; then
+    veredicto 0 "Balanceador: con la VM 1 apagada, 10/10 peticiones respondidas por la VM 2"
+  else
+    veredicto 1 "Balanceador: con la VM 1 apagada no todas las peticiones respondieron por la VM 2"
+  fi
 }
 
 cierre() {
   [[ -f "$ESTADO/subasta-caos" ]] || { echo "Primero corre 'caos'." >&2; exit 1; }
-  negrita "DIS-01: exactamente 1 cierre y 1 cobro en la subasta del caos"
-  bash "$RAIZ/dis01/verificar-cierre.sh" "$(cat "$ESTADO/subasta-caos")"
+  empezar "DIS-01: exactamente 1 cierre y 1 cobro en la subasta del caos"
+  local salida; salida=$(bash "$RAIZ/dis01/verificar-cierre.sh" "$(cat "$ESTADO/subasta-caos")" 2>&1 | tail -1)
+  echo "$salida"
+  if echo "$salida" | grep -q '"cumple": true'; then veredicto 0 "DIS-01: 1 cierre, 1 COBRO y 1 ABONO_VENTA"
+  else veredicto 1 "DIS-01: el cierre aún no cuadra (¿la subasta ya cerró?)"; fi
 }
 
 case "${1:-}" in
   preparar) preparar ;;
+  renovar) renovar ;;
   seg) seg ;;
   ren) ren ;;
   caos) caos ;;
   escalado) escalado ;;
   cierre) cierre ;;
+  balanceador) balanceador ;;
   todo) seg; ren; caos; escalado; sleep 20; cierre ;;
   *) sed -n '2,16p' "$0"; exit 2 ;;
 esac

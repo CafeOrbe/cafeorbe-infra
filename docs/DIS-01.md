@@ -68,15 +68,16 @@ y se eliminan al terminar.
 
 ### Presupuesto de conexiones a PostgreSQL
 
-Auction declara además `DB_POOL_MAX=2` en ambos pipelines, el configurador y el encendido. Es la
+Auction declara además `DB_POOL_MAX=4` en ambos pipelines, el configurador y el encendido. Es la
 única variable que el configurador reemplaza deliberadamente; conserva las demás. La prueba real
 de escalado encontró un override anterior de 10 por réplica: con seis réplicas podía pedir 60
 conexiones y bloquear los nuevos arranques. El PostgreSQL de QA tiene `max_connections=50`, con
 15 conexiones reservadas y 35 utilizables por usuarios normales; no se aumentó el servidor.
 
-Con los límites actuales de QA, auction consume como máximo `4 × 2 = 8`; identity, wallet y
+Con los límites actuales de QA, auction consume como máximo `4 × 4 = 16`; identity, wallet y
 streaming usan pools de 3 y máximos de 2 réplicas cada uno (`3 × 2 × 3 = 18`). El máximo conjunto
-es 26, dejando nueve conexiones de margen. Recalcular este presupuesto si cambian los pools o
+es 34, dejando una conexión de margen. Con 2 conexiones por réplica, el publicador del
+outbox ocupaba una mientras esperaba el bloqueo y las pujas hacían fila por conexión (19 nov). Recalcular este presupuesto si cambian los pools o
 límites de cualquiera de esos servicios; no basta con abrir el máximo de réplicas.
 
 ```bash
