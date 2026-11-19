@@ -16,6 +16,7 @@ function parseArgs() {
     tasa: 20, // pujas por segundo
     duracion: 600, // segundos
     rampup: 20, // segundos para conectar usuarios
+    paralelo: 1, // conexiones abiertas a la vez (1 = una por una, como la corrida formal de REN-01)
     etapa: 'objetivo',
     salida: 'resultado-carga.json',
     html: 'resultado-carga.html',
@@ -30,6 +31,7 @@ function parseArgs() {
       case '--tasa': options.tasa = parseFloat(args[++i]); break;
       case '--duracion': options.duracion = parseInt(args[++i], 10); break;
       case '--rampup': options.rampup = parseInt(args[++i], 10); break;
+      case '--paralelo': options.paralelo = Math.max(1, parseInt(args[++i], 10)); break;
       case '--etapa': options.etapa = args[++i]; break;
       case '--salida': options.salida = args[++i]; break;
       case '--html': options.html = args[++i]; break;
@@ -328,16 +330,24 @@ async function faseConexion() {
   console.log(`[1/3] Conectando progresivamente ${opts.usuarios} clientes...`);
   const delayMs = Math.max(10, Math.floor((opts.rampup * 1000) / opts.usuarios));
 
-  for (let i = 0; i < opts.usuarios; i++) {
+  // Con --paralelo N se abren N conexiones a la vez (cada comprador pide su propio ticket), para que la
+  // carga duplicada del escalado empiece en segundos y no tras ~2 min de conexiones una por una.
+  const conectarConReintento = async (i) => {
     let client = await conectarComprador(i);
     if (!client) {
       await new Promise(r => setTimeout(r, 600));
       client = await conectarComprador(i);
     }
-    sockets.push(client);
-    if ((i + 1) % 25 === 0 || i === opts.usuarios - 1) {
+    sockets[i] = client;
+  };
+  for (let i = 0; i < opts.usuarios; i += opts.paralelo) {
+    const lote = [];
+    for (let j = i; j < Math.min(i + opts.paralelo, opts.usuarios); j++) lote.push(conectarConReintento(j));
+    await Promise.all(lote);
+    const hechos = Math.min(i + opts.paralelo, opts.usuarios);
+    if (Math.floor(hechos / 25) !== Math.floor(i / 25) || hechos === opts.usuarios) {
       const activos = sockets.filter(s => s && s.activo).length;
-      console.log(`  · ${i + 1}/${opts.usuarios} procesados (${activos} activos)`);
+      console.log(`  · ${hechos}/${opts.usuarios} procesados (${activos} activos)`);
     }
     await new Promise(r => setTimeout(r, delayMs));
   }

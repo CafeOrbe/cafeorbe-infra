@@ -158,12 +158,12 @@ escalado() {
   local tope="${ESCALADO_TOPE_S:-175}"
   empezar "DIS-01 escalado: carga duplicada (400 WebSocket, 40 pujas/s) · auction de 2 hacia 4 réplicas"
   (cd "$REN" && REN01_SUBASTA="$SUBASTA_CARGA" exec node carga-sala.mjs --etapa escalado --usuarios 400 --tasa 40 \
-    --duracion "$tope" --rampup 10 --salida "$ESTADO/escalado.json" --html "$ESTADO/escalado.html" \
+    --duracion "$tope" --rampup 10 --paralelo 20 --salida "$ESTADO/escalado.json" --html "$ESTADO/escalado.html" \
     > "$ESTADO/escalado.log" 2>&1) &
   local carga=$! subasta=2 n
   while ((SECONDS - INICIO_PASO < tope)); do
     n=$(az containerapp replica list -g $GRUPO -n auction-service --query 'length(@)' -o tsv --only-show-errors 2>/dev/null || echo "?")
-    echo "$(date -u +%T) +$((SECONDS - INICIO_PASO)) s · auction-service=$n réplicas · $(grep -o 'WS Activos: [0-9]*' "$ESTADO/escalado.log" | tail -1)"
+    echo "$(date -u +%T) +$((SECONDS - INICIO_PASO)) s · auction-service=$n réplicas · $(grep -oE 'WS Activos: [0-9]+|[0-9]+/400 procesados \([0-9]+ activos\)|Generando carga' "$ESTADO/escalado.log" | tail -1)"
     if [[ "$n" =~ ^[0-9]+$ ]] && ((n > 2)); then subasta=$n; break; fi
     sleep 10
   done
