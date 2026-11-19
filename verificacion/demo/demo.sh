@@ -8,7 +8,7 @@
 #   ./verificacion/demo/demo.sh preparar    # ANTES de la presentación (~8 min): 400 compradores con Orbes y subasta
 #   ./verificacion/demo/demo.sh renovar     # si la subasta de carga venció: otra en segundos, mismos compradores
 #   ./verificacion/demo/demo.sh seg         # SEG-01/02/03 · ~1 min
-#   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 90 s (~2 min)
+#   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 75 s (~2 min 40 s)
 #   ./verificacion/demo/demo.sh caos        # DIS-01: cae 1 de 2 réplicas de auction y de realtime · ~2,5 min
 #   ./verificacion/demo/demo.sh escalado    # DIS-01: carga duplicada; se detiene al escalar auction (tope 3 min)
 #   ./verificacion/demo/demo.sh cierre      # DIS-01: 1 cierre y 1 cobro de la subasta del caos (cuando cierre)
@@ -112,7 +112,7 @@ seg() {
 ren() {
   leer_estado
   usar_compradores 200
-  local seg_carga="${REN_SEGUNDOS:-90}"
+  local seg_carga="${REN_SEGUNDOS:-75}"
   empezar "REN-01 (corto): 200 WebSocket, 20 pujas/s durante $seg_carga s · p95 ≤ 800 ms, p99 ≤ 1,5 s, 0 caídas"
   rm -f "$ESTADO/ren-resultado.json"
   (cd "$REN" && REN01_SUBASTA="$SUBASTA_CARGA" node carga-sala.mjs --etapa demo --usuarios 200 --tasa 20 \
