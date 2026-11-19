@@ -19,8 +19,7 @@ command -v jq >/dev/null || { echo "Falta jq." >&2; exit 1; }
 fallos=0
 for servicio in api-gateway auction-service realtime-gateway; do
   app="${servicio}${SUFIJO}"
-  min_esperado=4 max_esperado=6
-  if [[ "$servicio" == api-gateway ]]; then min_esperado=2 max_esperado=4; fi
+  min_esperado=2 max_esperado=4
   configuracion="$(az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json)"
   minimas="$(jq -r '.properties.template.scale.minReplicas' <<<"$configuracion")"
   maximas="$(jq -r '.properties.template.scale.maxReplicas' <<<"$configuracion")"
@@ -53,10 +52,10 @@ if ((fallos)); then
   exit 1
 fi
 
-echo "✓ Auction/realtime: 4–6 réplicas de 0,5 vCPU / 1 GiB; API: 2–4; sondas y readiness UP."
+echo "✓ API, auction y realtime: 2–4 réplicas (auction y realtime de 0,5 vCPU / 1 GiB); sondas y readiness UP."
 
-# Con 4–6 réplicas, 30 % por instancia es imposible. Se exige observar tráfico en al menos
-# cuatro instancias y se informa la distribución; no se certifica equidad mediante estas 60 muestras.
+# Medida del PDF: con 2 réplicas, al menos 30 % de las peticiones llega a cada una.
+# Si en ese momento hay más réplicas por escalado, se informa la distribución sin exigir el 30 %.
 auction="auction-service${SUFIJO}"
 auction_fqdn="$(az containerapp show --name "$auction" --resource-group "$GRUPO_RECURSOS" \
   --query properties.configuration.ingress.fqdn --output tsv)"
@@ -73,13 +72,19 @@ for ((i = 0; i < muestras; i++)); do
   atendidas["$instancia"]=$(( ${atendidas["$instancia"]:-0} + 1 ))
 done
 
-if ((${#atendidas[@]} < 4)); then
-  echo "La prueba de reparto exige al menos 4 instancias y observó ${#atendidas[@]}." >&2
+if ((${#atendidas[@]} < 2)); then
+  echo "La prueba de reparto exige al menos 2 instancias y observó ${#atendidas[@]}." >&2
   exit 1
 fi
+reparto_bajo=0
 for instancia in "${!atendidas[@]}"; do
   porcentaje=$((atendidas["$instancia"] * 100 / muestras))
   echo "auction instancia=$instancia peticiones=${atendidas[$instancia]}/$muestras (${porcentaje} %)"
+  if ((porcentaje < 30)); then reparto_bajo=1; fi
 done
 
-echo "✓ Se observó tráfico en ${#atendidas[@]} instancias de auction; distribución informativa."
+if ((${#atendidas[@]} == 2 && reparto_bajo)); then
+  echo "Con 2 réplicas, una recibió menos del 30 % de las peticiones." >&2
+  exit 1
+fi
+echo "✓ Se observó tráfico en ${#atendidas[@]} instancias de auction."
