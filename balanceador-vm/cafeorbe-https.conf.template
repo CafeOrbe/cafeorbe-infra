@@ -21,6 +21,10 @@ server {
   # El Azure Load Balancer es de capa 4 y conserva la IP del cliente: las auditorías de SEG-01 a SEG-05 la reciben.
   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   proxy_set_header X-Forwarded-Proto https;
+  # DIS-01: los destinos se resuelven en cada petición con el DNS de Azure (no solo al arrancar). El 18 nov
+  # NGINX se reinició con QA apagado, no resolvió realtime-gateway y quedó detenido en las dos VMs.
+  resolver 168.63.129.16 valid=30s ipv6=off;
+  resolver_timeout 3s;
 
   location = /lb/salud {
     access_log off;
@@ -30,7 +34,8 @@ server {
 
   # WebSocket → realtime-gateway
   location /ws/ {
-    proxy_pass https://__WS_HOST__;
+    set $destino_ws __WS_HOST__;
+    proxy_pass https://$destino_ws;
     proxy_ssl_name __WS_HOST__;
     proxy_set_header Host __WS_HOST__;
     proxy_set_header Upgrade $http_upgrade;
@@ -41,7 +46,8 @@ server {
 
   # REST → api-gateway
   location / {
-    proxy_pass https://__API_HOST__;
+    set $destino_api __API_HOST__;
+    proxy_pass https://$destino_api;
     proxy_ssl_name __API_HOST__;
     proxy_set_header Host __API_HOST__;
     proxy_read_timeout 60s;

@@ -11,6 +11,7 @@
 #   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 75 s (~2 min 40 s)
 #   ./verificacion/demo/demo.sh caos        # DIS-01: cae 1 de 2 réplicas de auction y de realtime · ~2,5 min
 #   ./verificacion/demo/demo.sh escalado    # DIS-01: carga duplicada; se detiene al escalar auction (tope 3 min)
+#   ./verificacion/demo/demo.sh balanceador # DIS-01: Load Balancer + 2 VMs NGINX; apaga la VM 1 y todo pasa por la VM 2 (~2 min)
 #   ./verificacion/demo/demo.sh cierre      # DIS-01: 1 cierre y 1 cobro de la subasta del caos (cuando cierre)
 #   ./verificacion/demo/demo.sh todo        # seg, ren, caos, escalado y cierre seguidos (~11 min)
 #
@@ -173,6 +174,35 @@ escalado() {
   else veredicto 1 "DIS-01 escalado: auction no escaló en $tope s"; fi
 }
 
+# DIS-01 · balanceador de carga: Azure Load Balancer (capa 4) con 2 máquinas virtuales NGINX.
+# Diseño y creación: scripts/balanceador-azure.sh y docs/BALANCEADOR.md; NGINX: balanceador-vm/.
+LB_URL="https://cafeorbe-lb.eastus2.cloudapp.azure.com"
+reparto() { # reparto <n>: n lecturas por el balanceador; cuenta estado HTTP y VM que atendió
+  for _ in $(seq 1 "$1"); do
+    curl -s -o /dev/null -D - -m 5 "$LB_URL/actuator/health/readiness" | tr -d '\r' \
+      | awk '/^HTTP/{c=$2} tolower($1)=="x-cafeorbe-vm:"{v=$2} END{print (c?c:"sin-respuesta"), v}'
+  done | sort | uniq -c
+}
+balanceador() {
+  empezar "DIS-01 balanceador: Azure Load Balancer + 2 VMs NGINX (cafeorbe-lb-vm1 y cafeorbe-lb-vm2)"
+  az network lb show -g $GRUPO -n cafeorbe-lb --only-show-errors \
+    --query "{sku:sku.name, reglas:join(', ', loadBalancingRules[].name), sonda:join(' ', [probes[0].protocol, probes[0].requestPath, 'cada', to_string(probes[0].intervalInSeconds), 's'])}" -o table
+  az vm list -g $GRUPO -d --only-show-errors --query "[?starts_with(name,'cafeorbe-lb-vm')].{vm:name, tamano:hardwareProfile.vmSize, estado:powerState}" -o table
+  echo; echo "Reparto con las dos VMs (10 lecturas):"; reparto 10
+  echo; echo "$(date -u +%T) Apagando cafeorbe-lb-vm1 (la sonda la saca del reparto)..."
+  az vm stop -g $GRUPO -n cafeorbe-lb-vm1 --only-show-errors -o none
+  sleep 12
+  echo "$(date -u +%T) Reparto con la VM 1 apagada (10 lecturas):"
+  local salida; salida="$(reparto 10)"; echo "$salida"
+  echo "$(date -u +%T) Encendiendo cafeorbe-lb-vm1 en segundo plano (vuelve al reparto en ~1 min)"
+  az vm start -g $GRUPO -n cafeorbe-lb-vm1 --no-wait --only-show-errors -o none
+  if [[ "$(echo "$salida" | awk '$2=="200" && $3=="cafeorbe-lb-vm2"{n+=$1} END{print n+0}')" == 10 ]]; then
+    veredicto 0 "Balanceador: con la VM 1 apagada, 10/10 peticiones respondidas por la VM 2"
+  else
+    veredicto 1 "Balanceador: con la VM 1 apagada no todas las peticiones respondieron por la VM 2"
+  fi
+}
+
 cierre() {
   [[ -f "$ESTADO/subasta-caos" ]] || { echo "Primero corre 'caos'." >&2; exit 1; }
   empezar "DIS-01: exactamente 1 cierre y 1 cobro en la subasta del caos"
@@ -190,6 +220,7 @@ case "${1:-}" in
   caos) caos ;;
   escalado) escalado ;;
   cierre) cierre ;;
+  balanceador) balanceador ;;
   todo) seg; ren; caos; escalado; sleep 20; cierre ;;
   *) sed -n '2,16p' "$0"; exit 2 ;;
 esac

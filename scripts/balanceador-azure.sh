@@ -110,7 +110,7 @@ apt-get update -qq && apt-get install -y -qq nginx certbot >/dev/null
 mkdir -p /var/www/certbot
 echo '$http' | base64 -d > /etc/nginx/conf.d/cafeorbe-http.conf
 rm -f /etc/nginx/sites-enabled/default
-nginx -t && systemctl reload nginx && echo \"NGINX listo en \$(hostname)\""
+nginx -t && systemctl reload-or-restart nginx && echo \"NGINX listo en \$(hostname)\""
 }
 
 sacar_del_pool() { # sacar_del_pool <vm>: para que el reto de Let's Encrypt llegue siempre a la otra VM
@@ -148,7 +148,7 @@ if [ ! -f /etc/nginx/conf.d/cafeorbe-https.conf ]; then
   echo '$https' | base64 -d > /etc/nginx/conf.d/cafeorbe-https.conf
 fi
 nginx -t
-systemctl reload nginx
+systemctl reload-or-restart nginx
 echo CAFEO_HTTPS_OK")" || return 1
   [[ "$salida" == *CAFEO_HTTPS_OK* ]] || { printf '%s\n' "$salida" >&2; return 1; }
   echo "  HTTPS listo en $vm"
@@ -165,9 +165,9 @@ cp -p "$conf" "$anterior"
 printf "%s" "'"$https"'" | base64 -d > "$nueva"
 chmod --reference="$conf" "$nueva"
 mv -f "$nueva" "$conf"
-if ! nginx -t || ! systemctl reload nginx; then
+if ! nginx -t || ! systemctl reload-or-restart nginx; then
   cp -p "$anterior" "$conf"
-  nginx -t && systemctl reload nginx
+  nginx -t && systemctl reload-or-restart nginx
   exit 1
 fi
 echo CAFEO_DESTINO_OK')" || return 1
