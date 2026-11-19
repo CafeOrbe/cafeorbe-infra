@@ -18,6 +18,22 @@ Corrida UTC: 2026-11-16 13:28:02 a 13:38:02. Auction `f6e5971b5a973cdbca71a1d061
 
 Informe, consultas crudas de CPU, resumen, muestras y graficas: [corrida conservada](evidencia-ren01/corrida-20261116T132531Z/INFORME.md).
 
+## Corrida del 19 nov 2026 (2 réplicas de 0,5 vCPU, desde Cloud Shell)
+
+**Dictamen: NO CUMPLE por p95.** Corrida `corrida-20261119T124203Z`, ejecutada con `EJECUTAR-QA.ps1 -Az az` en pwsh de Cloud Shell, sobre la subasta `b31af95d-805d-4a95-a550-750c90346e02`.
+
+| Criterio | Resultado |
+|---|---|
+| 200 WebSockets durante 600 s | Cumple, 0 desconexiones |
+| 20 pujas/s sostenidas | Cumple: 12.000 enviadas, 200 por bloque de 10 s |
+| p95 ≤ 800 ms | **912,6 ms: no cumple** |
+| p99 ≤ 1500 ms | 1040,1 ms: cumple |
+| Duplicados, desorden y gaps | 0 |
+| CPU por réplica < 80 % | Cumple: máx. 34 % auction y 42,6 % realtime (Azure no separa por réplica) |
+| Dos réplicas estables en el muestreo | El evaluador lo marca NO CUMPLE, aunque las 32 muestras de cada servicio muestran 2 réplicas. Falta revisar la causa en `aceptacion.json` |
+
+La carga salió de Azure (East US 2), así que la red local ya no influye: la latencia es del sistema. Frente al 16 nov (815,8 ms con 0,25 vCPU, desde la red local), el p95 empeoró.
+
 ## Revisar
 
 1. Medicion de todos los receptores: cada aceptada debe aparecer en los 200 sockets, conciliada con PostgreSQL, incluidos primer y ultimo evento. Los rechazos no se mezclan en el percentil de aceptadas. Intentos sin respuesta o errores impiden aprobar.

@@ -113,7 +113,9 @@ class Topologia(unittest.TestCase):
                 expected = (2, 4)
                 self.assertEqual((scale["minReplicas"], scale["maxReplicas"]), expected)
                 self.assertEqual(scale["cooldownPeriod"], 300)
-                self.assertEqual(scale["rules"][0]["http"]["metadata"]["concurrentRequests"], "20")
+                # El ambiente express solo admite la regla HTTP; auction escala antes (10) porque las pujas hacen fila ahí.
+                self.assertEqual(scale["rules"], [{"name": "http-concurrency", "http": {"metadata": {
+                    "concurrentRequests": "10" if service == "auction-service" else "20"}}}])
                 container = template["containers"][0]
                 old = before["properties"]["template"]["containers"][0]
                 for field in ("image", "name"):
@@ -145,6 +147,19 @@ class Topologia(unittest.TestCase):
         data["properties"]["template"]["scale"].update(minReplicas=2, maxReplicas=4)
         data["properties"]["template"]["containers"][0]["resources"]["cpu"] = 0.25
         self.write("auction-service", data)
+        self.run_script("dis-01-verificar.sh", "qa", success=False)
+
+    def test_verificar_rechaza_umbral_de_auction_o_reglas_personalizadas(self):
+        self.run_script("dis-01-configurar.sh", "qa")
+        data = self.read("auction-service")
+        data["properties"]["template"]["scale"]["rules"][0]["http"]["metadata"]["concurrentRequests"] = "20"
+        self.write("auction-service", data)
+        self.run_script("dis-01-verificar.sh", "qa", success=False)
+        self.run_script("dis-01-configurar.sh", "qa")
+        data = self.read("realtime-gateway")
+        data["properties"]["template"]["scale"]["rules"].append(
+            {"name": "cpu-utilizacion", "custom": {"type": "cpu", "metadata": {"type": "Utilization", "value": "50"}}})
+        self.write("realtime-gateway", data)
         self.run_script("dis-01-verificar.sh", "qa", success=False)
 
     def test_verificar_rechaza_pool_que_agota_presupuesto(self):

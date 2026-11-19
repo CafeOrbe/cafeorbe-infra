@@ -31,7 +31,7 @@ trap limpiar EXIT
 configurar() {
   local servicio="$1"
   local puerto="$2"
-  local minimas="$3" maximas="$4"
+  local minimas="$3" maximas="$4" concurrencia="$5"
   local app="${servicio}${SUFIJO}"
   local actual actualizado
   actual="$(mktemp)"
@@ -42,9 +42,15 @@ configurar() {
   echo "→ $app: $minimas–$maximas réplicas y sondas HTTP en el puerto $puerto"
   az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json >"$actual"
 
+  # Escalado: el ambiente express solo admite la regla HTTP (las reglas de CPU o TCP se rechazan con
+  # ExpressCustomScaleRulesNotSupported). La CPU tampoco distingue la carga normal de la duplicada (12-20 % en las
+  # dos, 19 nov): el límite es PostgreSQL y el bloqueo de la fila. Lo que sí crece es la concurrencia en auction:
+  # cada puja llega de realtime como POST y, con la carga duplicada, hace fila en el bloqueo. Con 20 pujas/s hay
+  # unas 3 peticiones concurrentes por réplica; el umbral de auction es 10 para que la carga duplicada escale.
   # Readiness cada 2 s y 2 fallos. En Express se observó tráfico hacia contenedores que
   # reiniciaban pese a estas sondas; con dos réplicas base queda una sana durante la caída y el escalado repone la otra.
-  jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" '
+  jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" \
+    --arg concurrencia "$concurrencia" '
     .properties.template.scale.minReplicas = $minimas
     | .properties.template.scale.maxReplicas = $maximas
     | if $servicio == "auction-service" or $servicio == "realtime-gateway" then
@@ -60,7 +66,7 @@ configurar() {
     | .properties.template.scale.rules = [
         {
           "name": "http-concurrency",
-          "http": {"metadata": {"concurrentRequests": "20"}}
+          "http": {"metadata": {"concurrentRequests": $concurrencia}}
         }
       ]
     | .properties.template.containers[0].probes = [
@@ -101,8 +107,8 @@ configurar() {
     --only-show-errors >/dev/null
 }
 
-configurar api-gateway 8080 2 4
-configurar auction-service 8082 2 4
-configurar realtime-gateway 8085 2 4
+configurar api-gateway 8080 2 4 20
+configurar auction-service 8082 2 4 10
+configurar realtime-gateway 8085 2 4 20
 
 echo "✓ DIS-01 configurado en $AMBIENTE. Ejecuta scripts/dis-01-verificar.sh $AMBIENTE para reunir evidencia."

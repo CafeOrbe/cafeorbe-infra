@@ -1,0 +1,11 @@
+{
+  "app": "realtime-gateway-prod",
+  "cpu": 0.5,
+  "max": 6,
+  "memoria": "1Gi",
+  "min": 4,
+  "reglas": [
+    "http-concurrency"
+  ],
+  "revision": "realtime-gateway-prod--latest"
+}

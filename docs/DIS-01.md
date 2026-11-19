@@ -9,6 +9,9 @@ sube, se agregan réplicas **hasta 4**.
 
 Configuración: `api-gateway`, `auction-service` y `realtime-gateway` en **2 a 4 réplicas**; auction y
 realtime con **0,5 vCPU / 1 GiB** por réplica.
+Escalado por regla HTTP (la única que admite el ambiente express): 20 peticiones concurrentes por réplica,
+excepto auction con **10**, donde las pujas hacen fila en el bloqueo cuando la carga se duplica. Resultados del
+19 nov: caos 3 de 3 y escalado de auction 2 → 4 ([RESULTADO-DIS01.md](../verificacion/dis01/RESULTADO-DIS01.md)).
 
 Las medidas de aceptación (PDF) son:
 

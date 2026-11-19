@@ -1,0 +1,11 @@
+{
+  "app": "auction-service-prod",
+  "cpu": 0.5,
+  "max": 6,
+  "memoria": "1Gi",
+  "min": 3,
+  "reglas": [
+    "http-concurrency"
+  ],
+  "revision": "auction-service-prod--latest"
+}

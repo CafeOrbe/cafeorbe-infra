@@ -7,3 +7,4 @@ evidencia-ren01/fixture-sin-red.*
 evidencia-ren01/corrida-*/resultado-objetivo.json
 evidencia-ren01/corrida-*/postgres-antes.json
 evidencia-ren01/corrida-*/postgres-despues.json
+.subasta-ren01
