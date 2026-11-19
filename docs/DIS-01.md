@@ -156,3 +156,17 @@ Para la nueva configuración:
 
 Abrir el máximo a seis deja margen para demostrar escalabilidad; la aceptación de ese criterio
 permanece pendiente hasta ejecutar y conservar la prueba correspondiente.
+
+## Repetición en PROD a través del balanceador
+
+Ejecutar después de verificar las seis aplicaciones y el cambio de destino descrito en [BALANCEADOR.md](BALANCEADOR.md). Usar una subasta de 3 minutos y finalizar la carga dentro de esa ventana.
+
+```bash
+export MSYS_NO_PATHCONV=1
+export API_URL=https://cafeorbe-lb.eastus2.cloudapp.azure.com
+export WS_URL=wss://cafeorbe-lb.eastus2.cloudapp.azure.com
+CAFEORBE_AMBIENTE=prod node verificacion/dis01/caos-bajo-carga.mjs --antes 30 --despues 90 --replicas-minimas 4
+bash verificacion/dis01/verificar-cierre.sh "$REN01_SUBASTA" prod
+```
+
+Preparar antes los compradores y exportar `REN01_SUBASTA` con el identificador en PROD. Ejecutar `verificar-cierre.sh` después del cierre de la subasta. Registrar errores REST, reconexión, pujas perdidas, reposición y cierre contable. La verificación de PROD está pendiente.

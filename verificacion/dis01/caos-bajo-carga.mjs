@@ -17,6 +17,13 @@ import { execFileSync, spawn } from 'node:child_process'
 const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? Number(process.argv[i + 1]) : d }
 const API = process.env.API_URL ?? 'https://api-gateway.blackbay-48700ead.eastus2.azurecontainerapps.io'
 const WS = process.env.WS_URL ?? 'wss://realtime-gateway.blackbay-48700ead.eastus2.azurecontainerapps.io'
+const AMBIENTE = process.env.CAFEORBE_AMBIENTE ?? 'qa'
+if (!['qa', 'prod'].includes(AMBIENTE)) throw new Error('CAFEORBE_AMBIENTE debe ser qa o prod')
+if (AMBIENTE === 'prod' && (
+  API !== 'https://cafeorbe-lb.eastus2.cloudapp.azure.com' ||
+  WS !== 'wss://cafeorbe-lb.eastus2.cloudapp.azure.com'
+)) throw new Error('DIS-01 en PROD requiere las URL del balanceador')
+const SUFIJO = AMBIENTE === 'prod' ? '-prod' : ''
 const SUBASTA = process.env.REN01_SUBASTA
 const N = arg('--clientes', 60), PPS = arg('--pps', 5), ANTES = arg('--antes', 30), DESPUES = arg('--despues', 90)
 const MIN_REPLICAS = arg('--replicas-minimas', 4)
@@ -198,7 +205,7 @@ if (detalle.status !== 200 || detalle.cuerpo.estado !== 'EN_CURSO') throw new Er
 siguienteMinimo = detalle.cuerpo.siguienteMinimo
 const base = detalle.cuerpo.cantidadPujas
 
-const antesDeCaos = SIN_CAOS ? null : { auction: replicas('auction-service'), realtime: replicas('realtime-gateway') }
+const antesDeCaos = SIN_CAOS ? null : { auction: replicas(`auction-service${SUFIJO}`), realtime: replicas(`realtime-gateway${SUFIJO}`) }
 if (antesDeCaos) for (const r of Object.values(antesDeCaos)) if (r.nombres.length < MIN_REPLICAS) throw new Error(`${r.app} tiene ${r.nombres.length} réplica(s); DIS-01 exige ${MIN_REPLICAS}`)
 
 console.log(`DIS-01 · ${N} compradores, ${PPS} pujas/s, falla a los ${ANTES} s, observación ${DESPUES} s después`)
@@ -264,7 +271,7 @@ console.log(`Medición lista (antes de esperar reposición): REST 30 s ${err30}/
 let reposicion = null
 if (antesDeCaos) {
   for (let i = 0; i < MAX_REPOSICION / 5 && !reposicion; i++) {
-    const actuales = { auction: replicas('auction-service'), realtime: replicas('realtime-gateway') }
+    const actuales = { auction: replicas(`auction-service${SUFIJO}`), realtime: replicas(`realtime-gateway${SUFIJO}`) }
     // Al terminar PID 1, Container Apps reinicia el contenedor dentro de la MISMA réplica (mismo nombre,
     // restartCount + 1) o crea una réplica nueva: cualquiera de los dos cuenta como reposición.
     const listas = Object.values(actuales).every((r) => {
