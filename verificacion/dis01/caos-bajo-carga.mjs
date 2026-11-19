@@ -9,7 +9,7 @@
 //   - hora exacta de la falla, para medir en Grafana la degradación (≤ 30 s) y la alerta (≤ 2 min).
 // Un cierre y un cobro por subasta se comprueban después con verificar-cierre.py, cuando la subasta termina.
 //
-//   REN01_SUBASTA=<id EN_CURSO> node dis01/caos-bajo-carga.mjs [--clientes 60] [--pps 5] [--antes 30] [--despues 90] [--replicas-minimas 4] [--sin-caos]
+//   REN01_SUBASTA=<id EN_CURSO> node dis01/caos-bajo-carga.mjs [--clientes 60] [--pps 5] [--antes 30] [--despues 90] [--replicas-minimas 2] [--sin-caos]
 // Usa ../ren01/compradores.json (preparar-ren01.mjs). Necesita Azure CLI con acceso a cafeorbe-org.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
@@ -19,7 +19,7 @@ const API = process.env.API_URL ?? 'https://api-gateway.blackbay-48700ead.eastus
 const WS = process.env.WS_URL ?? 'wss://realtime-gateway.blackbay-48700ead.eastus2.azurecontainerapps.io'
 const SUBASTA = process.env.REN01_SUBASTA
 const N = arg('--clientes', 60), PPS = arg('--pps', 5), ANTES = arg('--antes', 30), DESPUES = arg('--despues', 90)
-const MIN_REPLICAS = arg('--replicas-minimas', 4)
+const MIN_REPLICAS = arg('--replicas-minimas', 2)
 if (!Number.isInteger(MIN_REPLICAS) || MIN_REPLICAS < 2) throw new Error('--replicas-minimas debe ser un entero >= 2')
 const SIN_CAOS = process.argv.includes('--sin-caos')
 process.on('SIGINT', () => process.exit(130))

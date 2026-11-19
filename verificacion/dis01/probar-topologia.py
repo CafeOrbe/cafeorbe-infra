@@ -53,7 +53,7 @@ else:
         counter = root / "counter"
         n = int(counter.read_text()) if counter.exists() else 0
         counter.write_text(str(n+1))
-        count = int(os.environ.get("DIS01_TRAFFIC_INSTANCES", os.environ.get("DIS01_AUCTION_COUNT", "4")))
+        count = int(os.environ.get("DIS01_TRAFFIC_INSTANCES", os.environ.get("DIS01_AUCTION_COUNT", "2")))
         print('metric{instancia="r'+str(n % count)+'"} 1')
     else: raise SystemExit("URL curl no simulada")
 '''
@@ -110,7 +110,7 @@ class Topologia(unittest.TestCase):
                 data, before = self.read(app), self.original[app]
                 template = data["properties"]["template"]
                 scale = template["scale"]
-                expected = (2, 4) if service == "api-gateway" else (4, 6)
+                expected = (2, 4)
                 self.assertEqual((scale["minReplicas"], scale["maxReplicas"]), expected)
                 self.assertEqual(scale["cooldownPeriod"], 300)
                 self.assertEqual(scale["rules"][0]["http"]["metadata"]["concurrentRequests"], "20")
@@ -127,22 +127,23 @@ class Topologia(unittest.TestCase):
                 self.assertEqual({p["type"] for p in container["probes"]}, {"Startup", "Readiness", "Liveness"})
             self.run_script("dis-01-verificar.sh", environment)
 
-    def test_verificar_acepta_seis_y_rechaza_instancias_no_listas_o_sin_reparto(self):
+    def test_verificar_acepta_dos_a_cuatro_y_rechaza_instancias_no_listas_o_sin_reparto(self):
         self.run_script("dis-01-configurar.sh", "qa")
-        self.run_script("dis-01-verificar.sh", "qa", DIS01_AUCTION_COUNT="6")
-        self.run_script("dis-01-verificar.sh", "qa", success=False, DIS01_AUCTION_READY="3")
+        self.run_script("dis-01-verificar.sh", "qa")
+        self.run_script("dis-01-verificar.sh", "qa", DIS01_AUCTION_COUNT="4")
+        self.run_script("dis-01-verificar.sh", "qa", success=False, DIS01_AUCTION_COUNT="5")
+        self.run_script("dis-01-verificar.sh", "qa", success=False, DIS01_AUCTION_READY="1")
         self.run_script("dis-01-verificar.sh", "qa", success=False, DIS01_TRAFFIC_INSTANCES="1")
 
     def test_verificar_rechaza_limites_y_recursos_anteriores(self):
         self.run_script("dis-01-configurar.sh", "qa")
         data = self.read("auction-service")
-        data["properties"]["template"]["scale"].update(minReplicas=2, maxReplicas=4)
-        data["properties"]["template"]["containers"][0]["resources"]["cpu"] = 0.25
+        data["properties"]["template"]["scale"].update(minReplicas=4, maxReplicas=6)
         self.write("auction-service", data)
         result = self.run_script("dis-01-verificar.sh", "qa", success=False)
         self.assertIn("DIS-01 no cumple en 1 servicio(s).", result.stderr)
-        data["properties"]["template"]["scale"].update(minReplicas=4, maxReplicas=6)
-        data["properties"]["template"]["containers"][0]["resources"]["cpu"] = 1
+        data["properties"]["template"]["scale"].update(minReplicas=2, maxReplicas=4)
+        data["properties"]["template"]["containers"][0]["resources"]["cpu"] = 0.25
         self.write("auction-service", data)
         self.run_script("dis-01-verificar.sh", "qa", success=False)
 
@@ -157,7 +158,7 @@ class Topologia(unittest.TestCase):
         self.run_script("azure-encender.sh")
         for service in (*SERVICIOS, "identity-service", "wallet-service", "streaming-service"):
             template = self.read(service)["properties"]["template"]
-            expected = (4, 6) if service in ("auction-service", "realtime-gateway") else (2, 4) if service == "api-gateway" else (1, 2)
+            expected = (2, 4) if service in SERVICIOS else (1, 2)
             self.assertEqual((template["scale"]["minReplicas"], template["scale"]["maxReplicas"]), expected)
             if service in ("auction-service", "realtime-gateway"):
                 self.assertEqual(template["containers"][0]["resources"]["cpu"], 0.5)

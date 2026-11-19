@@ -12,7 +12,7 @@ flowchart LR
     web["Navegador<br/>cafeorbe-web en Vercel"] -->|"HTTPS y WSS :443"| lb["Azure Load Balancer cafeorbe-lb<br/>IP pública cafeorbe-lb-ip<br/>sonda HTTP /lb/salud cada 5 s"]
     lb --> vm1["VM 1 · NGINX<br/>cafeorbe-lb-vm1"]
     lb --> vm2["VM 2 · NGINX<br/>cafeorbe-lb-vm2"]
-    vm1 & vm2 -->|"/ws/*"| rt["realtime-gateway<br/>4–6 réplicas"]
+    vm1 & vm2 -->|"/ws/*"| rt["realtime-gateway<br/>2–4 réplicas"]
     vm1 & vm2 -->|"/*"| api["api-gateway<br/>2–4 réplicas"]
 # Balanceador de carga Azure Front Door · restricción tecnológica de DIS-01
 
@@ -31,7 +31,7 @@ flowchart LR
         b1["api-b<br/>api-gateway-b"]
     end
     subgraph ogws["og-ws · ruta /ws/*"]
-        a2["realtime-a<br/>realtime-gateway (4–6 réplicas)"]
+        a2["realtime-a<br/>realtime-gateway (2–4 réplicas)"]
         b2["realtime-b<br/>realtime-gateway-b (2–4 réplicas)"]
     end
     fd -->|"peso 500"| a1
@@ -152,7 +152,7 @@ flowchart LR
         b1["api-gateway-b (B)<br/>2–4 réplicas"]
     end
     subgraph ws["WebSocket /ws/"]
-        a2["realtime-gateway (A)<br/>4–6 réplicas"]
+        a2["realtime-gateway (A)<br/>2–4 réplicas"]
         b2["realtime-gateway-b (B)<br/>2–4 réplicas"]
     end
     lb -->|50 %| a1
@@ -236,7 +236,7 @@ Alternativas evaluadas:
 - **NGINX propio** (PR #20): desplegado y probado, retirado de QA por la caída de conexiones en REN-01.
 
 Queda como balanceador el **ingreso de Azure Container Apps** (Envoy administrado, configurado por el equipo:
-ingreso externo, sin afinidad, sondas de readiness cada 2 s y 4–6 réplicas).
+ingreso externo, sin afinidad, sondas de readiness cada 2 s y 2–4 réplicas).
 ./scripts/balanceador.sh crear     # instancias B, imagen NGINX en ACR y Container App cafeorbe-lb
 ./scripts/balanceador.sh probar    # reparto A/B y ruta del WebSocket
 ```
