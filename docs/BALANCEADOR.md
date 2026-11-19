@@ -12,7 +12,7 @@ flowchart LR
     web["Navegador<br/>cafeorbe-web en Vercel"] -->|"HTTPS y WSS :443"| lb["Azure Load Balancer cafeorbe-lb<br/>IP pública cafeorbe-lb-ip<br/>sonda HTTP /lb/salud cada 5 s"]
     lb --> vm1["VM 1 · NGINX<br/>cafeorbe-lb-vm1"]
     lb --> vm2["VM 2 · NGINX<br/>cafeorbe-lb-vm2"]
-    vm1 & vm2 -->|"/ws/*"| rt["realtime-gateway<br/>4–6 réplicas"]
+    vm1 & vm2 -->|"/ws/*"| rt["realtime-gateway<br/>2–4 réplicas"]
     vm1 & vm2 -->|"/*"| api["api-gateway<br/>2–4 réplicas"]
 ```
 

@@ -43,7 +43,7 @@ configurar() {
   az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json >"$actual"
 
   # Readiness cada 2 s y 2 fallos. En Express se observó tráfico hacia contenedores que
-  # reiniciaban pese a estas sondas; las cuatro réplicas base mantienen tres sanas durante la caída.
+  # reiniciaban pese a estas sondas; con dos réplicas base queda una sana durante la caída y el escalado repone la otra.
   jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" '
     .properties.template.scale.minReplicas = $minimas
     | .properties.template.scale.maxReplicas = $maximas
@@ -102,7 +102,7 @@ configurar() {
 }
 
 configurar api-gateway 8080 2 4
-configurar auction-service 8082 4 6
-configurar realtime-gateway 8085 4 6
+configurar auction-service 8082 2 4
+configurar realtime-gateway 8085 2 4
 
 echo "✓ DIS-01 configurado en $AMBIENTE. Ejecuta scripts/dis-01-verificar.sh $AMBIENTE para reunir evidencia."
