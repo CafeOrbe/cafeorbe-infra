@@ -503,3 +503,38 @@ Auction volvió a observarse con cuatro réplicas listas a los **59.9–86.5 s**
 **Configuración final:** se mantienen cuatro réplicas de 0,5 vCPU / 1 GiB por app, todas listas y readiness UP. La verificación final está en [readiness-final.json](mejora4-4replicas-3min-20261117T033752Z/readiness-final.json), junto con snapshots de recursos y réplicas. La capacidad total asignada no cambió: 2 vCPU y 4 GiB por servicio.
 
 Las nuevas mediciones se suman a las tres corridas anteriores de 10 minutos con cuatro réplicas. Tres repeticiones con duración reducida no garantizan todos los fallos futuros. Se conserva el p95 medido en cada corrida; no se certifican aquí otros escenarios de rendimiento.
+
+
+## Corridas del 19 nov 2026 con 2–4 réplicas de 0,5 vCPU (configuración del PDF)
+
+Topología en QA después de integrar auction #18, realtime #16 e infra #25: `auction-service`, `realtime-gateway` y `api-gateway` en **2–4 réplicas**. Auction y realtime con 0,5 vCPU / 1 GiB y regla `http-concurrency` de 20; sondas Startup, Liveness y Readiness. Antes de las pruebas, PROD bajó a 2–4 para liberar núcleos: se usaron 6,5 de 10 ([escalado-20261118](escalado-20261118/)). Todo se ejecutó desde Azure Cloud Shell sobre `main` de infra (`b2c0344`). La regresión `probar-topologia.py` pasó 6 de 6.
+
+### Caída de réplicas bajo carga: tres corridas, se reportan todas
+
+Cada corrida usó 60 compradores, 5 pujas/s y una subasta de 4 minutos. A los 30 s se detuvo una réplica de auction y una de realtime, y se observó 90 s más.
+
+| Corrida | Subasta | Falla (UTC) | REST 30 s tras la falla | WebSocket | Pujas perdidas / fantasma | Réplicas repuestas | Cierre y cobro |
+|---|---|---|---|---|---|---|---|
+| 1 | `03d8d9bd-c68f-45e8-935b-64f3d03f946d` | 12:29:31 | ❌ 3,51 % (2/57; p95 807 ms) | ❌ 36 cortes, máx. 12,4 s | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+| 2 | `f6ef783d-9831-43a0-910e-4fe588b8c0fc` | 12:32:34 | ❌ 2,22 % (1/45; p95 1498 ms) | ❌ 22 cortes, máx. 25,4 s | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+| 3 | `b481decb-4786-449e-86f8-abd0436a8f18` | 12:35:39 | ✅ 0 % (0/58; p95 1462 ms) | ❌ 16 cortes, máx. 12,3 s | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+
+**Resultado: 0 de 3 corridas cumplen todas las medidas.** Se cumplen siempre la conservación de pujas y el cierre y cobro únicos. La reconexión menor a 10 s no se cumplió en ninguna corrida y los errores REST, en dos. Los intentos fallidos son todos de conexión: el ingreso sigue enviando ≈ 50 % de los intentos a la réplica que reinicia. Con 0,5 vCPU la réplica tarda más en volver que con 1 vCPU (17 nov: 2 de 3), y con 4 réplicas (17 nov: 6 de 6) la fracción de intentos perdidos baja a ≈ 25 %.
+
+### Escalado con la carga duplicada: no escaló
+
+`carga-sala.mjs --usuarios 400 --tasa 40 --duracion 300` sobre la subasta `525b5113-ebc0-4440-b3a2-f6fc5d753091`, el doble de REN-01. Un observador registró las réplicas cada 15 s durante la carga y 2 minutos después.
+
+| Medida | Resultado |
+|---|---|
+| Réplicas de auction, realtime y api-gateway | **2 en las 24 muestras de cada servicio**: no se agregó ninguna |
+| Pujas enviadas / por segundo | 12.000 / 40,00 |
+| WebSocket | 400 conectados, **77 desconexiones** |
+| Latencia p50 / p95 / p99 | 3002 / 5145 / 5682 ms |
+| Duplicados, desorden y gaps | 0 / 0 / 0 |
+
+**DIS-01, «si la carga sube, se agregan réplicas hasta 4»: no cumple.** La regla `http-concurrency` de 20 no se disparó con 400 WebSockets ni con 40 pujas/s. Las pujas viajan por WebSocket y no como peticiones HTTP concurrentes al ingreso, y las llamadas internas a auction son cortas. Hace falta una regla basada en CPU o en conexiones para demostrar el escalado.
+
+### Evidencia
+
+Los logs, los JSON de resultado y el muestreo de réplicas están en el paquete `evidencia-dis01-ren01-20261119.tar.gz`, generado en Cloud Shell. Ese Cloud Shell no tiene almacenamiento persistente: el paquete se conserva fuera del repositorio.
