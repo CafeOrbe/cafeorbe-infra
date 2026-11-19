@@ -538,3 +538,40 @@ Cada corrida usó 60 compradores, 5 pujas/s y una subasta de 4 minutos. A los 30
 ### Evidencia
 
 Los logs, los JSON de resultado y el muestreo de réplicas están en el paquete `evidencia-dis01-ren01-20261119.tar.gz`, generado en Cloud Shell. Ese Cloud Shell no tiene almacenamiento persistente: el paquete se conserva fuera del repositorio.
+
+
+## Correcciones del 19 nov y nuevas corridas: DIS-01 cumple con 2–4 réplicas
+
+### Qué se corrigió
+
+| Falla | Causa | Corrección |
+|---|---|---|
+| Reconexión de 12–25 s | Mientras la réplica caída reinicia, el ingreso le manda la mitad de los intentos y quedan colgados. Con un intento por ronda, la ronda falla el 50 % de las veces | **Conexión de respaldo** (web#10 y este generador): en la ventana rápida, si la conexión no abre en 400 ms se abre otra en paralelo con su propio ticket y gana la primera. La ronda falla solo si las dos caen en la réplica caída (25 %) |
+| REST con 2,2–3,5 % de errores | Gateway con límite de 1,2 s y 4 reintentos: 1 de cada 32 lecturas sin respuesta | **Gateway con 0,8 s y 9 reintentos** (api-gateway#10; en QA ya como variables de entorno): ~1 de cada 1000 |
+| No escalaba con la carga duplicada | El ambiente es *express*: solo admite la regla HTTP (CPU y TCP se rechazan con `ExpressCustomScaleRulesNotSupported`). La CPU tampoco crece: 12–20 % con carga normal y con carga duplicada, porque el límite es PostgreSQL y el bloqueo de la fila | **Regla HTTP de auction en 10 peticiones concurrentes por réplica.** Cada puja llega de realtime como POST; con la carga duplicada hace fila en el bloqueo y la concurrencia supera el umbral |
+
+### Caída de réplicas: 3 de 3 corridas cumplen
+
+Mismo procedimiento que antes: 60 compradores, 5 pujas/s, se detiene 1 de 2 réplicas de auction y 1 de 2 de realtime a los 30 s.
+
+| Corrida | Subasta | REST 30 s tras la falla | Reconexión máx. | Respaldos abiertos / ganadores | Pujas perdidas / fantasma | Réplicas repuestas | Cierre y cobro |
+|---|---|---|---|---|---|---|---|
+| 1 | `7971ffbe-92db-419c-9e39-9a15f42ecf16` | ✅ 0 % (0/47) | ✅ 4,19 s (24 cortes) | 13 / 7 | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+| 2 | `2792842c-963d-4031-aee0-0c511be5afd3` | ✅ 0 % (0/55) | ✅ 4,63 s (13 cortes) | 33 / 17 | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+| 3 | `9d68511e-a860-4793-8c73-f49749552af5` | ✅ 0 % (0/46) | ✅ 4,63 s (16 cortes) | 20 / 11 | ✅ 0 / 0 | ✅ | ✅ 1 cierre, 1 COBRO, 1 ABONO_VENTA |
+
+Antes de las correcciones, ese mismo día: 0 de 3 (reconexión de 12,4, 25,4 y 12,3 s).
+
+### Escalado con la carga duplicada: auction pasa de 2 a 4
+
+`carga-sala.mjs --usuarios 400 --tasa 40 --duracion 180` sobre la subasta `4c652393-2851-42bd-8387-7f52b1ca9f58`, con la regla HTTP de 10 en auction.
+
+| Medida | Resultado |
+|---|---|
+| Réplicas de auction | **2 → 4** a los ~2,5 min de carga sostenida (14:04:20 UTC); realtime y api-gateway en 2 |
+| WebSocket | 400 conectados, **0 desconexiones** |
+| Pujas | 7200 enviadas a 40,00/s |
+| Duplicados, desorden y gaps | 0 / 0 / 0 |
+| Latencia p50 / p95 / p99 | 748 / 3180 / 4288 ms (con el doble de la carga de REN-01; no es criterio de DIS-01) |
+
+Corrida anterior con la regla en 20, la misma mañana: las réplicas se quedaron en 2.
