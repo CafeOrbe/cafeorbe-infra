@@ -6,6 +6,7 @@
 # mismas medidas del PDF, para verlo en tiempo real.
 #
 #   ./verificacion/demo/demo.sh preparar    # ANTES de la presentación (~8 min): 400 compradores con Orbes y subasta
+#   ./verificacion/demo/demo.sh renovar     # si la subasta de carga venció: otra en segundos, mismos compradores
 #   ./verificacion/demo/demo.sh seg         # SEG-01/02/03 · ~1 min
 #   ./verificacion/demo/demo.sh ren         # REN-01 corto: 200 WebSocket, 20 pujas/s, 90 s (~2 min)
 #   ./verificacion/demo/demo.sh caos        # DIS-01: cae 1 de 2 réplicas de auction y de realtime · ~2,5 min
@@ -84,6 +85,16 @@ veredicto() { # veredicto <ok:0|1> <texto>
   local s=$((SECONDS - INICIO_PASO))
   if [[ "$1" == 0 ]]; then printf '\n\033[1;32m✅ %s\033[0m  (%d min %02d s)\n' "$2" $((s / 60)) $((s % 60))
   else printf '\n\033[1;31m❌ %s\033[0m  (%d min %02d s)\n' "$2" $((s / 60)) $((s % 60)); fi
+}
+
+# Subasta de carga nueva con los mismos 400 compradores (segundos). Usar si la de 'preparar' ya venció.
+renovar() {
+  credenciales
+  leer_estado
+  negrita "Subasta de carga nueva (90 min) con los compradores ya preparados"
+  (cd "$REN" && SIN_REGISTRO=1 node preparar-ren01.mjs --compradores 400 --minutos 90 --sufijo "$SUFIJO" | tail -1)
+  cp "$REN/compradores.json" "$ESTADO/compradores-400.json"
+  cat "$REN/.subasta-ren01" > "$ESTADO/subasta-carga"
 }
 
 seg() {
@@ -173,6 +184,7 @@ cierre() {
 
 case "${1:-}" in
   preparar) preparar ;;
+  renovar) renovar ;;
   seg) seg ;;
   ren) ren ;;
   caos) caos ;;
