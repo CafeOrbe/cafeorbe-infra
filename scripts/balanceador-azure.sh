@@ -8,6 +8,7 @@
 # Uso (Azure Cloud Shell o cualquier Bash con az), desde la raíz de cafeorbe-infra:
 #   ./scripts/balanceador-azure.sh crear    # red, IP pública, balanceador, 2 VMs, certificado y NGINX
 #   ./scripts/balanceador-azure.sh certificados  # repite el certificado y HTTPS en cada VM
+#   ./scripts/balanceador-azure.sh destino qa|prod  # cambia el origen HTTPS en ambas VMs
 #   ./scripts/balanceador-azure.sh estado   # balanceador, sonda, reglas y salud de cada VM
 #   ./scripts/balanceador-azure.sh probar   # 20 lecturas (reparto por VM), WebSocket y CORS
 #   ./scripts/balanceador-azure.sh apagar-vm 1|2    # detiene una VM (demostración de la sonda)
@@ -127,20 +128,79 @@ volver_al_pool() {
     --lb-name "$LB" --address-pool "$POOL" -o none
 }
 
-# Pide el certificado de Let's Encrypt en la VM (debe ser la única del pool) y activa HTTPS con el proxy.
+configuracion_https() {
+  local dom="$1" api="$2" ws="$3" ambiente="$4"
+  sed -e "s/__DOMINIO__/$dom/g" -e "s/__API_HOST__/$api/g" -e "s/__WS_HOST__/$ws/g" \
+    -e "s/__AMBIENTE__/$ambiente/g" "$RAIZ/balanceador-vm/cafeorbe-https.conf.template" | base64 -w0
+}
+
+# Pide el certificado cuando falta y conserva el destino HTTPS en renovaciones.
 certificado_y_https() {
-  local vm="$1" dom api ws https
+  local vm="$1" dom api ws https salida
   dom="$(dominio)" api="$(fqdn_app api-gateway)" ws="$(fqdn_app realtime-gateway)"
-  https="$(sed -e "s/__DOMINIO__/$dom/g" -e "s/__API_HOST__/$api/g" -e "s/__WS_HOST__/$ws/g" \
-    "$RAIZ/balanceador-vm/cafeorbe-https.conf.template" | base64 -w0)"
-  echo "  → $vm: certificado Let's Encrypt para $dom y HTTPS hacia api-gateway / realtime-gateway"
-  en_vm "$vm" "set -e
+  https="$(configuracion_https "$dom" "$api" "$ws" qa)"
+  salida="$(en_vm "$vm" "set -e
 if [ ! -f /etc/letsencrypt/live/$dom/fullchain.pem ]; then
   certbot certonly --webroot -w /var/www/certbot -d $dom --non-interactive --agree-tos \
     --register-unsafely-without-email --quiet
 fi
-echo '$https' | base64 -d > /etc/nginx/conf.d/cafeorbe-https.conf
-nginx -t && systemctl reload nginx && echo \"HTTPS listo en \$(hostname)\""
+if [ ! -f /etc/nginx/conf.d/cafeorbe-https.conf ]; then
+  echo '$https' | base64 -d > /etc/nginx/conf.d/cafeorbe-https.conf
+fi
+nginx -t
+systemctl reload nginx
+echo CAFEO_HTTPS_OK")" || return 1
+  [[ "$salida" == *CAFEO_HTTPS_OK* ]] || { printf '%s\n' "$salida" >&2; return 1; }
+  echo "  HTTPS listo en $vm"
+}
+
+aplicar_destino() {
+  local vm="$1" https="$2" salida
+  salida="$(en_vm "$vm" 'set -eu
+conf=/etc/nginx/conf.d/cafeorbe-https.conf
+anterior=$(mktemp)
+nueva=$(mktemp /etc/nginx/conf.d/cafeorbe-https.XXXXXX)
+trap "rm -f \"$anterior\" \"$nueva\"" EXIT
+cp -p "$conf" "$anterior"
+printf "%s" "'"$https"'" | base64 -d > "$nueva"
+chmod --reference="$conf" "$nueva"
+mv -f "$nueva" "$conf"
+if ! nginx -t || ! systemctl reload nginx; then
+  cp -p "$anterior" "$conf"
+  nginx -t && systemctl reload nginx
+  exit 1
+fi
+echo CAFEO_DESTINO_OK')" || return 1
+  [[ "$salida" == *CAFEO_DESTINO_OK* ]] || { printf '%s\n' "$salida" >&2; return 1; }
+}
+
+destino() {
+  local ambiente="$1" sufijo dominio_ambiente dom api ws https vm
+  case "$ambiente" in
+    qa) sufijo=""; dominio_ambiente=blackbay-48700ead ;;
+    prod) sufijo=-prod; dominio_ambiente=thankfulmoss-4f48ec41 ;;
+    *) echo "Indica destino qa o prod." >&2; return 2 ;;
+  esac
+  dom="$(dominio)"
+  api="$(fqdn_app "api-gateway$sufijo")"
+  ws="$(fqdn_app "realtime-gateway$sufijo")"
+  if [[ "$api" != "api-gateway$sufijo.$dominio_ambiente.eastus2.azurecontainerapps.io" ||
+        "$ws" != "realtime-gateway$sufijo.$dominio_ambiente.eastus2.azurecontainerapps.io" ||
+        ! "$dom" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+    echo "Los FQDN devueltos por Azure no corresponden al destino $ambiente." >&2
+    return 1
+  fi
+  for vm in "$api" "$ws"; do
+    curl -fsS --max-time 8 -o "$NULO" "https://$vm/actuator/health/readiness" || return 1
+  done
+  https="$(configuracion_https "$dom" "$api" "$ws" "$ambiente")"
+  for vm in "${VMS[@]}"; do
+    if ! aplicar_destino "$vm" "$https"; then
+      echo "No se confirmó $ambiente en $vm. Comprueba ambas VMs o restaura el destino anterior con destino qa|prod." >&2
+      return 1
+    fi
+    echo "  $vm → $ambiente"
+  done
 }
 
 crear() {
@@ -190,16 +250,16 @@ estado() {
 probar() {
   local url
   url="https://$(dominio)"
-  echo "20 lecturas a $url/actuator/health/readiness (estado · VM que atendió):"
+  echo "20 lecturas a $url/actuator/health/readiness (estado · VM · ambiente):"
   for _ in $(seq 1 20); do
-    curl -s -o "$NULO" -D - -m 10 "$url/actuator/health/readiness" | tr -d '\r' \
-      | awk '/^HTTP/{c=$2} tolower($1)=="x-cafeorbe-vm:"{v=$2} END{print c, v}'
+    curl -s -o "$NULO" -D - -m 5 "$url/actuator/health/readiness" | tr -d '\r' \
+      | awk '/^HTTP/{c=$2} tolower($1)=="x-cafeorbe-vm:"{v=$2} tolower($1)=="x-cafeorbe-ambiente:"{a=$2} END{print c, v, a}'
   done | sort | uniq -c
   echo "WebSocket sin ticket (debe responder realtime con 4xx):"
   curl -s -o "$NULO" -w "  HTTP %{http_code}\n" --http1.1 -m 10 -H "Connection: Upgrade" -H "Upgrade: websocket" \
     -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" "$url/ws/salas/prueba"
   echo "CORS desde la web:"
-  curl -s -o "$NULO" -D - -X OPTIONS "$url/api/subastas" -H "Origin: https://cafeorbe-web.vercel.app" \
+  curl -s -o "$NULO" -D - -m 10 -X OPTIONS "$url/api/subastas" -H "Origin: https://cafeorbe-web.vercel.app" \
     -H "Access-Control-Request-Method: GET" | tr -d '\r' | grep -iE "^HTTP|access-control-allow-origin" | sed 's/^/  /'
 }
 
@@ -225,10 +285,11 @@ borrar() {
 case "${1:-}" in
   crear) crear ;;
   certificados) certificados ;;
+  destino) destino "${2:-}" ;;
   estado) estado ;;
   probar) probar ;;
   apagar-vm) az vm stop -g "$GRUPO" -n "$(vm_por_numero "${2:-}")" -o none && echo "VM detenida: la sonda la saca del reparto en ~10 s" ;;
   encender-vm) az vm start -g "$GRUPO" -n "$(vm_por_numero "${2:-}")" -o none && echo "VM encendida: vuelve al reparto cuando la sonda responda" ;;
   borrar) borrar ;;
-  *) echo "Uso: $0 crear|certificados|estado|probar|apagar-vm N|encender-vm N|borrar" >&2; exit 2 ;;
+  *) echo "Uso: $0 crear|certificados|destino qa|prod|estado|probar|apagar-vm N|encender-vm N|borrar" >&2; exit 2 ;;
 esac
