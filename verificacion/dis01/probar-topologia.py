@@ -114,6 +114,8 @@ class Topologia(unittest.TestCase):
                 self.assertEqual((scale["minReplicas"], scale["maxReplicas"]), expected)
                 self.assertEqual(scale["cooldownPeriod"], 300)
                 self.assertEqual(scale["rules"][0]["http"]["metadata"]["concurrentRequests"], "20")
+                self.assertEqual(scale["rules"][1], {"name": "cpu-utilizacion",
+                                                     "custom": {"type": "cpu", "metadata": {"type": "Utilization", "value": "50"}}})
                 container = template["containers"][0]
                 old = before["properties"]["template"]["containers"][0]
                 for field in ("image", "name"):
@@ -145,6 +147,13 @@ class Topologia(unittest.TestCase):
         data["properties"]["template"]["scale"].update(minReplicas=2, maxReplicas=4)
         data["properties"]["template"]["containers"][0]["resources"]["cpu"] = 0.25
         self.write("auction-service", data)
+        self.run_script("dis-01-verificar.sh", "qa", success=False)
+
+    def test_verificar_rechaza_sin_regla_de_cpu(self):
+        self.run_script("dis-01-configurar.sh", "qa")
+        data = self.read("realtime-gateway")
+        data["properties"]["template"]["scale"]["rules"] = data["properties"]["template"]["scale"]["rules"][:1]
+        self.write("realtime-gateway", data)
         self.run_script("dis-01-verificar.sh", "qa", success=False)
 
     def test_verificar_rechaza_pool_que_agota_presupuesto(self):

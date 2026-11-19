@@ -33,12 +33,13 @@ for servicio in api-gateway auction-service realtime-gateway; do
     --revision "$revision" --output json | jq '[.[] | select(.properties.containers[0].ready == true)] | length')"
   sondas="$(jq '[.properties.template.containers[0].probes[]?.type] | sort' <<<"$configuracion")"
   concurrencia="$(jq -r '.properties.template.scale.rules[]? | select(.name == "http-concurrency") | .http.metadata.concurrentRequests' <<<"$configuracion")"
+  umbral_cpu="$(jq -r '.properties.template.scale.rules[]? | select(.name == "cpu-utilizacion") | .custom.metadata.value' <<<"$configuracion")"
   estado="$(curl --fail --silent --show-error --max-time 10 "https://$fqdn/actuator/health/readiness" || true)"
 
-  printf '%-20s min=%s max=%s listas=%s cpu=%s memoria=%s pool=%s concurrencia=%s sondas=%s readiness=%s\n' \
-    "$app" "$minimas" "$maximas" "$replicas" "$cpu" "$memoria" "${pool:--}" "$concurrencia" "$sondas" "$estado"
+  printf '%-20s min=%s max=%s listas=%s cpu=%s memoria=%s pool=%s concurrencia=%s escala-cpu=%s sondas=%s readiness=%s\n' \
+    "$app" "$minimas" "$maximas" "$replicas" "$cpu" "$memoria" "${pool:--}" "$concurrencia" "${umbral_cpu:--}" "$sondas" "$estado"
 
-  if [[ "$minimas" != "$min_esperado" || "$maximas" != "$max_esperado" || "$replicas" -lt "$min_esperado" || "$replicas" -gt "$max_esperado" || "$concurrencia" != "20" \
+  if [[ "$minimas" != "$min_esperado" || "$maximas" != "$max_esperado" || "$replicas" -lt "$min_esperado" || "$replicas" -gt "$max_esperado" || "$concurrencia" != "20" || "$umbral_cpu" != "50" \
       || "$sondas" != *'"Startup"'* || "$sondas" != *'"Liveness"'* || "$sondas" != *'"Readiness"'* \
       || "$estado" != *'"UP"'* \
       || ( "$servicio" != api-gateway && ( "$cpu" != "0.5" || "$memoria" != "1Gi" ) ) \

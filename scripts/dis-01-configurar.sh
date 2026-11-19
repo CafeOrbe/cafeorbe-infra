@@ -42,6 +42,9 @@ configurar() {
   echo "→ $app: $minimas–$maximas réplicas y sondas HTTP en el puerto $puerto"
   az containerapp show --name "$app" --resource-group "$GRUPO_RECURSOS" --output json >"$actual"
 
+  # Escalado: regla HTTP y regla de CPU al 50 %. Las pujas viajan por WebSocket y no cuentan como peticiones HTTP
+  # concurrentes; con la carga duplicada (19 nov) la regla HTTP sola no agregó réplicas. Con REN-01 normal la CPU
+  # llega a 34-43 %, así que la carga normal se queda en 2 réplicas.
   # Readiness cada 2 s y 2 fallos. En Express se observó tráfico hacia contenedores que
   # reiniciaban pese a estas sondas; con dos réplicas base queda una sana durante la caída y el escalado repone la otra.
   jq --argjson puerto "$puerto" --argjson minimas "$minimas" --argjson maximas "$maximas" --arg servicio "$servicio" '
@@ -61,6 +64,10 @@ configurar() {
         {
           "name": "http-concurrency",
           "http": {"metadata": {"concurrentRequests": "20"}}
+        },
+        {
+          "name": "cpu-utilizacion",
+          "custom": {"type": "cpu", "metadata": {"type": "Utilization", "value": "50"}}
         }
       ]
     | .properties.template.containers[0].probes = [

@@ -57,6 +57,8 @@ async function rest(ruta, token, tope = 10_000) {
 //     y nunca más de 1,5 s dentro de la ventana rápida (corrida del 17 nov: con 3 s, 3 intentos colgados = 10 s).
 //   - Durante los primeros 10 s tras el corte se reintenta cada 200 ms; después 1 s, 2 s, 4 s… hasta 10 s.
 //   - Hasta 30 % aleatorio sobre cada espera.
+//   - Dentro de la ventana rápida, si la conexión no abrió en 400 ms se abre una de respaldo en paralelo (ticket
+//     propio) y se usa la primera que abra (web#10).
 const ESPERA_CONEXION_MS = 1_500
 const ESPERA_CONEXION_MIN_MS = 800
 const ESPERA_CONEXION_MAX_MS = 3_000
@@ -64,6 +66,7 @@ const ESPERA_CONEXION_VENTANA_MAX_MS = 1_500
 const FACTOR_ESPERA_CONEXION = 3
 const VENTANA_RAPIDA_MS = 10_000
 const ESPERA_REINTENTO_RAPIDO_MS = 200
+const ESPERA_RESPALDO_MS = 400
 function esperaReintento(estado) {
   const t = ahora()
   estado.desconectadoDesde ??= t
@@ -85,6 +88,7 @@ const reconexiones = []             // { usuario, cerradaEn, abiertaEn, ms, codi
 const intentosFallidos = []
 const errores = { ws: 0, mensajesError: 0 }
 let enviadas = 0, rechazadas = 0, terminando = false
+let respaldosAbiertos = 0, respaldosGanadores = 0
 
 /** Error del paso del ticket, con un motivo legible: "HTTP 503", "tiempo agotado (5 s)" o el código de red. */
 class FalloDeTicket extends Error {
@@ -102,6 +106,47 @@ async function ticket(token) {
   return (await r.json()).ticket
 }
 
+const urlDeSala = (t) => `${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(t)}`
+
+/**
+ * Abre la conexión con la misma política que la web: la principal tiene su límite; con respaldo, a los 400 ms abre
+ * otra en paralelo y gana la primera que abra. Si la principal falla o vence, se descartan las dos.
+ */
+function abrirSala(c, url, msLimite, conRespaldo) {
+  return new Promise((ok, mal) => {
+    const abiertos = []
+    let fin = false
+    let tRespaldo
+    const terminar = (ganador, error) => {
+      if (fin) return
+      fin = true
+      clearTimeout(tLimite)
+      clearTimeout(tRespaldo)
+      for (const w of abiertos) if (w !== ganador) { w.onopen = w.onerror = w.onclose = null; try { w.close() } catch { /* ya cerrada */ } }
+      if (ganador) ok(ganador)
+      else mal(error)
+    }
+    const principal = new WebSocket(url)
+    abiertos.push(principal)
+    const tLimite = setTimeout(() => terminar(null, new Error(`no abrió en ${msLimite} ms`)), msLimite)
+    principal.onopen = () => terminar(principal)
+    principal.onerror = () => terminar(null, new Error('error de conexión'))
+    principal.onclose = (e) => terminar(null, new Error(`cerrada al abrir (${e?.code ?? '?'})`))
+    if (!conRespaldo) return
+    tRespaldo = setTimeout(async () => {
+      if (fin) return
+      let t
+      try { t = await ticket(c.token) } catch { return }
+      if (fin) return
+      const respaldo = new WebSocket(urlDeSala(t))
+      respaldosAbiertos++
+      abiertos.push(respaldo)
+      respaldo.onopen = () => { if (!fin) respaldosGanadores++; terminar(respaldo) }
+      respaldo.onerror = respaldo.onclose = () => { respaldo.onopen = null }
+    }, ESPERA_RESPALDO_MS)
+  })
+}
+
 function cliente(c) {
   const estado = { c, ws: null, abierto: false, cerradaEn: null, codigo: null,
     intentosLentos: 0, desconectadoDesde: null, esperaConexion: ESPERA_CONEXION_MS, fallosDesdeCorte: [] }
@@ -115,18 +160,13 @@ function cliente(c) {
       const intentoDesde = ahora()
       let fase = 'ticket'
       try {
-        const url = `${WS}/ws/salas/${SUBASTA}?ticket=${encodeURIComponent(await ticket(c.token))}`
+        const url = urlDeSala(await ticket(c.token))
         fase = 'conexion'
         const abriendoDesde = ahora()
         const enVentana = estado.desconectadoDesde !== null && abriendoDesde - estado.desconectadoDesde < VENTANA_RAPIDA_MS
         const msLimite = enVentana ? Math.min(estado.esperaConexion, ESPERA_CONEXION_VENTANA_MAX_MS) : estado.esperaConexion
-        ws = new WebSocket(url)
-        await new Promise((ok, mal) => {
-          const limite = setTimeout(() => mal(new Error(`no abrió en ${msLimite} ms`)), msLimite)
-          ws.onopen = () => { clearTimeout(limite); estado.esperaConexion = esperaConexionTras(ahora() - abriendoDesde); ok() }
-          ws.onerror = () => { clearTimeout(limite); mal(new Error('error de conexión')) }
-          ws.onclose = (e) => { clearTimeout(limite); mal(new Error(`cerrada al abrir (${e?.code ?? '?'})`)) }
-        })
+        ws = await abrirSala(c, url, msLimite, enVentana)
+        estado.esperaConexion = esperaConexionTras(ahora() - abriendoDesde)
       } catch (e) {
         errores.ws++
         const fallo = { usuario: c.id, en: iso(intentoDesde), fase, motivo: e?.motivo ?? e?.message ?? String(e), ms: ahora() - intentoDesde }
@@ -296,7 +336,7 @@ const resultado = {
       latenciaP95Ms: p95_30, latenciaMaximaMs: latencias30.at(-1) ?? null },
     codigos: Object.fromEntries([...new Set(sondas.map((s) => s.status))].map((c) => [c, sondas.filter((s) => s.status === c).length])),
   },
-  websocket: { cortados: reconexiones.length, reconexionMaximaMs: maxReconexion, reconexiones, erroresDeConexion: errores.ws, mensajesError: errores.mensajesError,
+  websocket: { cortados: reconexiones.length, reconexionMaximaMs: maxReconexion, respaldosAbiertos, respaldosGanadores, reconexiones, erroresDeConexion: errores.ws, mensajesError: errores.mensajesError,
     fallosPorMotivo: porMotivo(intentosFallidos), intentosFallidos },
   reposicion,
 }
@@ -311,7 +351,7 @@ const archivo = new URL(`./resultado-caos-${iso(inicio).replace(/[:.]/g, '')}.js
 writeFileSync(archivo, JSON.stringify(resultado, null, 2))
 
 console.log(`\nREST: ${ventana30.length} consultas en los 30 s tras la falla, ${err30} con error (${resultado.rest.en30sTrasFalla.porcentaje} %), p95 ${p95_30} ms · códigos ${JSON.stringify(resultado.rest.codigos)}`)
-console.log(`WebSocket: ${reconexiones.length} cortados, reconexión máxima ${maxReconexion} ms`)
+console.log(`WebSocket: ${reconexiones.length} cortados, reconexión máxima ${maxReconexion} ms · respaldos abiertos ${respaldosAbiertos}, ganadores ${respaldosGanadores}`)
 console.log(`Intentos fallidos: ${intentosFallidos.length} · ${JSON.stringify(resultado.websocket.fallosPorMotivo)}`)
 // Las reconexiones lentas, con cada intento: así se ve si fallaba la conexión (ingreso) o el ticket.
 for (const r of [...reconexiones].sort((a, b) => b.ms - a.ms).filter((r) => r.ms >= 5000)) {
