@@ -33,7 +33,7 @@ jobs:
   guardian:
     environment: QA   # tiene AZURE_CREDENTIALS, con acceso al grupo cafeorbe-org (QA y PROD)
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 30
     env:
       GRUPO: cafeorbe-org
       SERVIDORES: cafeorbe-pg cafeorbe-pg-prod
@@ -65,20 +65,29 @@ jobs:
         if: steps.decision.outputs.actuar == 'true'
         run: |
           set -euo pipefail
-          estado() { az postgres flexible-server show -g "$GRUPO" -n "$1" --query state -o tsv --only-show-errors; }
-          # Mientras Azure la está encendiendo o deteniendo no acepta otra orden: se espera a que se asiente.
+          # Un error de Azure (permisos, servidor inexistente) corta la ejecución en el acto: no es un estado intermedio.
+          estado() {
+            local e
+            if ! e=$(az postgres flexible-server show -g "$GRUPO" -n "$1" --query state -o tsv --only-show-errors) || [[ -z "$e" ]]; then
+              echo "::error::No se pudo leer el estado de $1. Revisar que AZURE_CREDENTIALS tenga permiso sobre la base." >&2
+              return 1
+            fi
+            echo "$e"
+          }
+          # Mientras Azure la está encendiendo o deteniendo no acepta otra orden: se espera a que se asiente (hasta 10 min).
           esperar_estable() {
             local s=$1 e
-            for _ in $(seq 1 60); do
-              e=$(estado "$s")
-              [[ "$e" == Ready || "$e" == Stopped || "$e" == Disabled ]] && { echo "$e"; return; }
+            for _ in $(seq 1 30); do
+              e=$(estado "$s") || return 1
+              [[ "$e" == Ready || "$e" == Stopped || "$e" == Disabled ]] && { echo "$e"; return 0; }
               echo "  $s está en '$e'; esperando..." >&2
               sleep 20
             done
-            echo "$e"
+            echo "::error::$s sigue en '$e' después de 10 min." >&2
+            return 1
           }
           for s in $SERVIDORES; do
-            e=$(esperar_estable "$s")
+            e=$(esperar_estable "$s") || exit 1
             echo "$s: $e"
             case "$ACCION:$e" in
               guardian:Ready|apagar:Ready)
