@@ -1,0 +1,102 @@
+name: PostgreSQL · mantener apagado
+
+# Azure enciende sola una base PostgreSQL Flexible Server a los 7 días de detenida y no permite desactivarlo.
+# Este guardián la vuelve a detener mientras la variable del repositorio MANTENER_APAGADO valga 'true'.
+#
+#   Activar el guardián:     gh variable set MANTENER_APAGADO --body true  -R CafeOrbe/cafeorbe-infra
+#   Desactivarlo (encender): gh variable set MANTENER_APAGADO --body false -R CafeOrbe/cafeorbe-infra
+#
+# Sin la variable, o con otro valor, la ejecución programada no hace nada. A mano (Run workflow) se puede
+# consultar el estado, apagar o encender; 'encender' exige que el guardián esté desactivado, para que no las
+# vuelva a detener en la siguiente ronda.
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'   # cada 6 horas
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: Qué hacer con las bases
+        required: true
+        default: estado
+        type: choice
+        options: [estado, apagar, encender]
+
+concurrency:
+  group: postgres-apagado
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guardian:
+    environment: QA   # tiene AZURE_CREDENTIALS, con acceso al grupo cafeorbe-org (QA y PROD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GRUPO: cafeorbe-org
+      SERVIDORES: cafeorbe-pg cafeorbe-pg-prod
+      MANTENER_APAGADO: ${{ vars.MANTENER_APAGADO }}
+      ACCION: ${{ github.event_name == 'schedule' && 'guardian' || inputs.accion }}
+    steps:
+      - name: Decidir si hay que actuar
+        id: decision
+        run: |
+          echo "Acción: $ACCION · MANTENER_APAGADO='${MANTENER_APAGADO}'"
+          if [[ "$ACCION" == guardian && "$MANTENER_APAGADO" != true ]]; then
+            echo "El guardián está desactivado (MANTENER_APAGADO no es 'true'): no se toca nada."
+            echo "actuar=false" >> "$GITHUB_OUTPUT"
+          elif [[ "$ACCION" == encender && "$MANTENER_APAGADO" == true ]]; then
+            echo "::error::MANTENER_APAGADO vale 'true': el guardián las volvería a apagar. Primero:"
+            echo "::error::gh variable set MANTENER_APAGADO --body false -R CafeOrbe/cafeorbe-infra"
+            exit 1
+          else
+            echo "actuar=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ingresar a Azure
+        if: steps.decision.outputs.actuar == 'true'
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6  # v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Aplicar a cada base
+        if: steps.decision.outputs.actuar == 'true'
+        run: |
+          set -euo pipefail
+          estado() { az postgres flexible-server show -g "$GRUPO" -n "$1" --query state -o tsv --only-show-errors; }
+          # Mientras Azure la está encendiendo o deteniendo no acepta otra orden: se espera a que se asiente.
+          esperar_estable() {
+            local s=$1 e
+            for _ in $(seq 1 60); do
+              e=$(estado "$s")
+              [[ "$e" == Ready || "$e" == Stopped || "$e" == Disabled ]] && { echo "$e"; return; }
+              echo "  $s está en '$e'; esperando..." >&2
+              sleep 20
+            done
+            echo "$e"
+          }
+          for s in $SERVIDORES; do
+            e=$(esperar_estable "$s")
+            echo "$s: $e"
+            case "$ACCION:$e" in
+              guardian:Ready|apagar:Ready)
+                echo "  → deteniendo $s"
+                az postgres flexible-server stop -g "$GRUPO" -n "$s" --only-show-errors -o none
+                echo "  $s: $(estado "$s")"
+                ;;
+              encender:Stopped)
+                echo "  → encendiendo $s"
+                az postgres flexible-server start -g "$GRUPO" -n "$s" --only-show-errors -o none
+                echo "  $s: $(estado "$s")"
+                ;;
+              *) echo "  sin cambios" ;;
+            esac
+          done
+          {
+            echo "### PostgreSQL ($ACCION)"
+            echo "| Servidor | Estado |"
+            echo "|---|---|"
+            for s in $SERVIDORES; do echo "| \`$s\` | $(estado "$s") |"; done
+          } >> "$GITHUB_STEP_SUMMARY"
